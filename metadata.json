@@ -1,0 +1,5 @@
+{
+  "name": "Copy of  نرم افزار پیاده ساز حرفه ای حکمت",
+  "description": "A sophisticated Persian-interface application for processing audio/video files using Gemini 3. Features include granular 4-minute chunk transcription, multi-stage text processing (Arabic highlighting, formalization, structuring), and an advanced media player with version control for text outputs.",
+  "requestFramePermissions": []
+}
