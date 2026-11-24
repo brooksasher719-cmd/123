@@ -1,0 +1,33 @@
+name: Guardian
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guardian
+  cancel-in-progress: false
+
+jobs:
+  run-guardian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 250
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install packages
+        run: pip install requests
+      - name: Run guardian
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID_GUARDIAN }}
+          MOFID_USERNAME: ${{ secrets.MOFID_USERNAME }}
+          MOFID_PASSWORD: ${{ secrets.MOFID_PASSWORD }}
+          FORCE_RUN_ON_WEEKEND: '1'
+        run: python portfolio_shield1_sim.py
