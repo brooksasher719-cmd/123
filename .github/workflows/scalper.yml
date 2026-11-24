@@ -1,0 +1,33 @@
+name: Scalper
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scalper
+  cancel-in-progress: false
+
+jobs:
+  run-scalper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install packages
+        run: pip install requests
+      - name: Run scalper
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID_SCALPER }}
+          MOFID_USERNAME: ${{ secrets.MOFID_USERNAME }}
+          MOFID_PASSWORD: ${{ secrets.MOFID_PASSWORD }}
+          FORCE_RUN_ON_WEEKEND: '1'
+        run: python sell_queue_scalper_sim.py
