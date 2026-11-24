@@ -111,6 +111,14 @@ NEW_ENTRY_CUTOFF_TIME_STR = "12:00:00"
 MARKET_CLOSE_TIME_STR = "12:30:00"
 RUN_OUTSIDE_MARKET_HOURS_FOR_DIAGNOSTIC = True  # اگر خارج از ساعت بازار اجرا شود، یک دور اسکن تشخیصی کامل روی کل بازار انجام می‌دهد و منتظر ۰۹:۰۰ می‌ماند
 
+
+def get_tehran_now():
+    """محاسبه دقیق ساعت رسمی تهران (IRST = UTC+03:30) مستقل از تایم‌زون سرور گیت‌هاب یا ویندوز"""
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    tehran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
+    return utc_now.astimezone(tehran_tz)
+
+
 # ==============================================================================
 # ۲. مسیر فایل‌های خروجی، لاگ و وضعیت پایدار (در همان پوشه اسکریپت - BASE_DIR)
 # ==============================================================================
@@ -119,7 +127,7 @@ DATA_DIR = BASE_DIR
 TOKEN_FILE = os.path.join(BASE_DIR, "token.txt")
 COOKIES_CACHE_FILE = os.path.join(DATA_DIR, "emofid_sso_cookies.json")
 
-TODAY_LOG_DATE_STR = datetime.datetime.now().strftime("%Y-%m-%d")
+TODAY_LOG_DATE_STR = get_tehran_now().strftime("%Y-%m-%d")
 SIM_LOG_FILENAME = f"sell_queue_sim_log_{TODAY_LOG_DATE_STR}.txt"
 GDRIVE_LOGS_SUBFOLDER_NAME = "logs"
 
@@ -613,7 +621,7 @@ class SimTeeLogger:
         try:
             self.log_file = open(log_path, "a", encoding="utf-8")
             self.log_file.write(
-                f"\n{'='*78}\n=== شروع نشست شکارچی صف فروش (حالت صوری/تست) در تاریخ: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n{'='*78}\n"
+                f"\n{'='*78}\n=== شروع نشست شکارچی صف فروش (حالت صوری/تست) در تاریخ: {get_tehran_now().strftime('%Y-%m-%d %H:%M:%S')} (IRST) ===\n{'='*78}\n"
             )
             self.log_file.flush()
         except Exception:
@@ -921,10 +929,10 @@ def compute_target_sell_price_for_net_profit(
     """
     محاسبه دقیق قیمت فروش به گونه‌ای که پس از کسر کامل کارمزد خرید و کارمزد فروش،
     حداقل target_net_pct (مثلاً +0.50% = 0.005) سود خالص به دست آید:
-    NetProceeds = P_sell * (1 - sell_comm_rate)
-    TotalCost = P_buy * (1 + buy_comm_rate)
-    NetProceeds >= TotalCost * (1 + target_net_pct)
-    => P_sell >= P_buy * (1 + buy_comm_rate) * (1 + target_net_pct) / (1 - sell_comm_rate)
+      NetProceeds = P_sell * (1 - sell_comm_rate)
+      TotalCost = P_buy * (1 + buy_comm_rate)
+      NetProceeds >= TotalCost * (1 + target_net_pct)
+      => P_sell >= P_buy * (1 + buy_comm_rate) * (1 + target_net_pct) / (1 - sell_comm_rate)
     """
     raw_target = (
         float(buy_price)
@@ -985,7 +993,7 @@ def load_sim_state():
         except Exception:
             pass
     return {
-        "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "created_at": get_tehran_now().strftime("%Y-%m-%d %H:%M:%S"),
         "initial_capital_rials": None,
         "available_cash_rials": None,
         "total_trades_count": 0,
@@ -1024,6 +1032,7 @@ def append_trade_to_csv(row_dict):
                 f.flush()
     except Exception as e:
         print(f"[!] خطا در ثبت فایل CSV معاملات صوری: {e}")
+
 
 # ==============================================================================
 # ۶. استعلام آنلاین موجودی حساب و اسکن سراسری تمام نمادهای بازار
@@ -1692,7 +1701,7 @@ class SellQueueCollapseTracker:
         self.rejection_log_ts = {}
         self.sim_state = sim_state
         if isinstance(sim_state, dict):
-            today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            today_str = get_tehran_now().strftime("%Y-%m-%d")
             if sim_state.get("peak_queues_date") == today_str and isinstance(sim_state.get("peak_queue_by_isin"), dict):
                 for k, v in sim_state["peak_queue_by_isin"].items():
                     try:
@@ -1703,7 +1712,7 @@ class SellQueueCollapseTracker:
 
     def sync_peaks_to_state(self):
         if isinstance(self.sim_state, dict):
-            self.sim_state["peak_queues_date"] = datetime.datetime.now().strftime("%Y-%m-%d")
+            self.sim_state["peak_queues_date"] = get_tehran_now().strftime("%Y-%m-%d")
             self.sim_state["peak_queue_by_isin"] = dict(self.peak_queue_by_isin)
 
     def seed_peak_only(self, isin, best_sell_price, low_allowed, best_sell_qty, best_buy_qty):
@@ -2090,10 +2099,10 @@ class SellQueueCollapseTracker:
                 if (prev_peak_w * low_allowed) >= min_valid_q_val:
                     self.had_deep_drop_wave_by_isin.add(isin)
                     self.in_second_or_later_wave_by_isin.add(isin)
-                else:
-                    self.peak_queue_by_isin[isin] = 0
-                hist.clear()
-                self.sync_peaks_to_state()
+            else:
+                self.peak_queue_by_isin[isin] = 0
+            hist.clear()
+            self.sync_peaks_to_state()
             return self._update_floating_ask_wall(
                 isin,
                 now_ts,
@@ -2241,6 +2250,7 @@ class SellQueueCollapseTracker:
             "is_actively_draining_now": is_actively_draining_now,
         }
 
+
 _LAST_REJECTION_LOG_BY_ISIN = {}
 _LAST_WATCH_LOG_BY_ISIN = {}
 
@@ -2255,7 +2265,7 @@ def _log_near_miss_rejection(candidate, reason_msg):
     min_gap = 6.0 if queue_changed else 45.0
     if reason_changed or (now_t - prev_t) >= min_gap:
         _LAST_REJECTION_LOG_BY_ISIN[isin] = (now_t, reason_msg, curr_q)
-        now_s = datetime.datetime.now().strftime("%H:%M:%S")
+        now_s = get_tehran_now().strftime("%H:%M:%S")
         print(
             f"[{now_s}] [عدم ورود — {candidate['symbol_name']}] "
             f"ریزش صف: -{candidate['drop_from_peak_pct']:.1f}% | سرعت: {candidate['depletion_pct_per_sec']:.2f}%/s | "
@@ -2288,7 +2298,7 @@ def _log_watch_collapse_throttled(candidate):
         prev_max_d = prev[2] if prev else 0.0
         prev_max_v = prev[3] if prev else 0.0
         _LAST_WATCH_LOG_BY_ISIN[isin] = (now_t, curr_q, max(prev_max_d, drop_p), max(prev_max_v, vel_p))
-        live_t_str = datetime.datetime.now().strftime("%H:%M:%S")
+        live_t_str = get_tehran_now().strftime("%H:%M:%S")
         print(
             f"[{live_t_str}] رصد ریزش صف فروش: {candidate['symbol_name']} | "
             f"باقی‌مانده صف: {candidate['current_sell_queue_vol']:,} از {candidate['peak_sell_queue_vol']:,} سهم "
@@ -2305,7 +2315,7 @@ def evaluate_and_execute_simulated_entry(
     if len(sim_state["open_positions"]) >= MAX_CONCURRENT_POSITIONS:
         return False
 
-    today_iso_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    today_iso_str = get_tehran_now().strftime("%Y-%m-%d")
     trades_today_for_isin = sum(
         1
         for t_item in (sim_state.get("completed_trades_summary") or [])
@@ -2485,7 +2495,7 @@ def evaluate_and_execute_simulated_entry(
             else MIN_INDIVIDUAL_BUY_POWER_RATIO_EQUITY
         )
         if not is_etf:
-            now_hm = datetime.datetime.now().strftime("%H:%M:%S")
+            now_hm = get_tehran_now().strftime("%H:%M:%S")
             bid_pres_live = float(deep.get("bid_pressure") or 0.0)
             if bid_pres_live >= 1.50 and ind_bp >= 0.75 and candidate["real_trade_match_ratio"] >= 0.90:
                 ind_bp = round(max(ind_bp, min(bid_pres_live, 1.25)), 2)
@@ -2570,7 +2580,7 @@ def evaluate_and_execute_simulated_entry(
         candidate["sell_comm_rate"],
     )
 
-    now_dt = datetime.datetime.now()
+    now_dt = get_tehran_now()
     trade_id = f"SIM-{now_dt.strftime('%Y%m%d-%H%M%S')}-{isin[4:8] if len(isin) >= 8 else isin[-4:]}"
     sim_state["total_trades_count"] = int(sim_state.get("total_trades_count", 0)) + 1
     sim_state["available_cash_rials"] = avail_cash - fin["total_buy_cost_rials"]
@@ -2676,7 +2686,7 @@ def update_open_simulated_positions(session, headers, sim_state):
     except Exception:
         pass
 
-    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+    now_str = get_tehran_now().strftime("%H:%M:%S")
 
     for isin in list(isins):
         pos = open_pos.get(isin)
@@ -2728,7 +2738,7 @@ def update_open_simulated_positions(session, headers, sim_state):
             if target_sp > breakeven_p and not pos.get("trailing_above_target_active"):
                 target_sp = breakeven_p
 
-        today_iso = datetime.datetime.now().strftime("%Y-%m-%d")
+        today_iso = get_tehran_now().strftime("%Y-%m-%d")
         prev_pos_date = str(pos.get("last_tracked_date") or pos.get("date") or today_iso)
         if prev_pos_date != today_iso or total_traded < int(pos.get("last_total_traded_shares") or 0):
             pos["last_tracked_date"] = today_iso
@@ -2873,7 +2883,7 @@ def update_open_simulated_positions(session, headers, sim_state):
                     exit_reason_note = f"خروج اضطراری حد ضرر دیوار عرضه شناور (افت -{drop_below_entry_pct:.2f}% زیر قیمت ورود)"
 
         if order_filled:
-            now_dt = datetime.datetime.now()
+            now_dt = get_tehran_now()
             fin = compute_trade_financials(
                 pos["buy_price_rials"],
                 exit_p,
@@ -2986,7 +2996,7 @@ def print_portfolio_status_report(sim_state, current_snapshots=None):
         f"  سود/زیان تحقق‌نیافته پوزیشن‌های باز (پس از کسر کارمزد): {unrealized_pnl:+,} ریال ({round(unrealized_pnl/10.0):+,} تومان)"
     )
     for od in open_details:
-        print(f"  -> [پوزیشن باز] {od}")
+        print(f"   -> [پوزیشن باز] {od}")
     print("-" * 89)
 
 
@@ -3086,7 +3096,7 @@ def archive_and_close_stale_previous_day_positions(session, headers, sim_state):
     if not open_pos:
         return
 
-    today_iso = datetime.datetime.now().strftime("%Y-%m-%d")
+    today_iso = get_tehran_now().strftime("%Y-%m-%d")
     stale_isins = [
         isin for isin, pos in open_pos.items()
         if str(pos.get("date") or "") and str(pos.get("date")) < today_iso
@@ -3134,7 +3144,7 @@ def archive_and_close_stale_previous_day_positions(session, headers, sim_state):
             pos["sell_commission_rate"],
         )
         pos["status"] = "ARCHIVED_PREV_DAY_POSITION"
-        pos["archived_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pos["archived_at"] = get_tehran_now().strftime("%Y-%m-%d %H:%M:%S")
         pos["mark_price_at_archive_rials"] = mark_p
         pos["unrealized_net_pct_at_archive"] = m_fin["net_profit_pct"]
         pos["unrealized_net_tomans_at_archive"] = m_fin["net_profit_tomans"]
@@ -3166,7 +3176,7 @@ def log_archived_prev_day_live_fate_once(session, headers, sim_state):
         _ARCHIVED_LIVE_FATE_LOGGED_TODAY = True
         return
 
-    today_d = datetime.date.today()
+    today_d = get_tehran_now().date()
     recent_archived = []
     for p_arch in archived_list[-15:]:
         p_date_str = str(p_arch.get("date") or "").strip()
@@ -3204,7 +3214,7 @@ def log_archived_prev_day_live_fate_once(session, headers, sim_state):
     _ARCHIVED_LIVE_FATE_LOGGED_TODAY = True
     print(
         f"\n{'='*86}\n"
-        f"=== گزارش سرنوشت پوزیشن‌های آرشیوشده روز قبل در بازار زنده امروز (ساعت {datetime.datetime.now().strftime('%H:%M:%S')}) ===\n"
+        f"=== گزارش سرنوشت پوزیشن‌های آرشیوشده روز قبل در بازار زنده امروز (ساعت {get_tehran_now().strftime('%H:%M:%S')}) ===\n"
         f"{'='*86}"
     )
     for idx, pos in enumerate(recent_archived, start=1):
@@ -3239,7 +3249,7 @@ def run_postmarket_retrospective_audit_of_today_candidates(session, headers, uni
     except Exception:
         return
 
-    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    today_str = get_tehran_now().strftime("%Y-%m-%d")
     idx = log_text.find(today_str)
     if idx == -1:
         matches = list(
@@ -3496,7 +3506,7 @@ def main():
     sys.stdout = tee_logger
     try:
         is_manual_dispatch = os.environ.get("GITHUB_EVENT_NAME", "") in ("workflow_dispatch", "push") or os.environ.get("FORCE_RUN_ON_WEEKEND") == "1"
-        if datetime.datetime.now().weekday() in (3, 4) and not is_manual_dispatch:
+        if get_tehran_now().weekday() in (3, 4) and not is_manual_dispatch:
             print("[*] امروز پنج‌شنبه/جمعه (تعطیل رسمی بازار بورس) است؛ اجرای زمان‌بندی‌شده بدون اجرا بسته می‌شود.")
             return
         tok_ok, tok_msg = ensure_valid_token()
@@ -3529,7 +3539,7 @@ def main():
             f"[+] هدف سود خالص پایه: سهام +{TARGET_NET_PROFIT_PCT_EQUITY*100:.2f}% | صندوق‌های ETF کم‌کارمزد +{TARGET_NET_PROFIT_PCT_ETF*100:.2f}% (به همراه تریلینگ پویا تا سقف روزانه و صف خرید +4.8%)"
         )
         print(
-            f"[+] موتور شکار متمرکز (نسخه ۶.۲ — لاگ روزانه + اصلاح آدرس آپلود multipart + سینک ایمن غیرمسدودکننده): شکار خالص صف فروش کف روزانه (حداقل عمق {MIN_INITIAL_SELL_QUEUE_VALUE_RIALS//10:,} تومان | دیوار عرضه شناور: {'فعال' if ENABLE_FLOATING_SELL_QUEUE else 'غیرفعال'}) | قفل کارمزد + تسویه قطعی {EOD_MANDATORY_FLATTEN_TIME_STR}"
+            f"[+] موتور شکار متمرکز (نسخه ۶.۳ — قفل دائمی ساعت تهران UTC+03:30 + لاگ روزانه + سینک ایمن غیرمسدودکننده): شکار خالص صف فروش کف روزانه (حداقل عمق {MIN_INITIAL_SELL_QUEUE_VALUE_RIALS//10:,} تومان | دیوار عرضه شناور: {'فعال' if ENABLE_FLOATING_SELL_QUEUE else 'غیرفعال'}) | قفل کارمزد + تسویه قطعی {EOD_MANDATORY_FLATTEN_TIME_STR}"
         )
         print(f"[+] فایل لاگ روزانه: {SIM_LOG_TXT} (پوشه ابری: {GDRIVE_LOGS_SUBFOLDER_NAME}/{SIM_LOG_FILENAME})")
         print(f"[+] فایل دیتاست معاملات صوری (CSV تجمعی): {SIM_TRADES_CSV}")
@@ -3554,10 +3564,10 @@ def main():
         hot_watchlist_isins = set()
 
         print(
-            f"\n[*] حلقه پایش زنده بازار فعال شد (بازه معاملات: {MARKET_START_TIME_STR} تا {MARKET_CLOSE_TIME_STR})..."
+            f"\n[*] حلقه پایش زنده بازار فعال شد (بازه معاملات: {MARKET_START_TIME_STR} تا {MARKET_CLOSE_TIME_STR} به وقت تهران IRST)..."
         )
         while True:
-            now_dt = datetime.datetime.now()
+            now_dt = get_tehran_now()
             now_str = now_dt.strftime("%H:%M:%S")
 
             if time.time() - last_token_check_ts > 900:
@@ -3565,11 +3575,11 @@ def main():
                 headers = build_headers()
                 last_token_check_ts = time.time()
 
-            is_weekend_ir = datetime.datetime.now().weekday() in (3, 4)
+            is_weekend_ir = now_dt.weekday() in (3, 4)
             if is_weekend_ir or now_str < "08:59:50" or now_str > MARKET_CLOSE_TIME_STR:
                 if now_str > MARKET_CLOSE_TIME_STR or is_weekend_ir:
                     print(
-                        f"\n[*] ساعت فعلی ({now_str}) خارج از بازه معاملات زنده بورس (09:00:00 تا {MARKET_CLOSE_TIME_STR}) است؛\n"
+                        f"\n[*] ساعت فعلی تهران ({now_str} IRST) خارج از بازه معاملات زنده بورس (09:00:00 تا {MARKET_CLOSE_TIME_STR}) است؛\n"
                         f"    اسکن تشخیصی تابلو و همگام‌سازی خودکار با گوگل درایو با موفقیت انجام شد.\n"
                         f"    (توجه: در اجرای خودکار صبح‌های شنبه تا چهارشنبه، ربات از 08:50 تا 12:30 به مدت ۳ ساعت و ۴۰ دقیقه روشن می‌ماند و معاملات را انجام می‌دهد):"
                     )
@@ -3585,7 +3595,7 @@ def main():
                     break
                 if time.time() - last_status_print_ts >= 60.0:
                     print(
-                        f"[{now_str}] در انتظار شروع معاملات پیوسته بازار (شروع رصد اوج صف‌های فروش از 09:00:00 و شروع شکار از {MARKET_START_TIME_STR})..."
+                        f"[{now_str} IRST] در انتظار شروع معاملات پیوسته بازار (شروع رصد اوج صف‌های فروش از 09:00:00 و شروع شکار از {MARKET_START_TIME_STR})..."
                     )
                     last_status_print_ts = time.time()
                 time.sleep(3.0)
@@ -3635,7 +3645,7 @@ def main():
                             if cand:
                                 if cand["drop_from_peak_pct"] >= 20.0:
                                     new_hot.add(isin)
-                                live_t_str = datetime.datetime.now().strftime("%H:%M:%S")
+                                live_t_str = get_tehran_now().strftime("%H:%M:%S")
                                 if prev_q != new_q and cand["drop_from_peak_pct"] >= 50.0 and cand["depletion_pct_per_sec"] >= 1.5:
                                     _log_watch_collapse_throttled(cand)
                                 if MARKET_START_TIME_STR <= live_t_str <= NEW_ENTRY_CUTOFF_TIME_STR:
@@ -3674,7 +3684,7 @@ def main():
                                 _SHARED_THREAD_POOL.submit(fetch_symbol_deep_telemetry, session, headers, isin)
                             hot_watchlist_isins.add(isin)
                             active_collapsing.append(cand)
-                        live_b_str = datetime.datetime.now().strftime("%H:%M:%S")
+                        live_b_str = get_tehran_now().strftime("%H:%M:%S")
                         if MARKET_START_TIME_STR <= live_b_str <= NEW_ENTRY_CUTOFF_TIME_STR:
                             evaluate_and_execute_simulated_entry(
                                 session, headers, cand, sim_state
