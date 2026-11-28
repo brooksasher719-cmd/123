@@ -53,8 +53,8 @@ from requests.adapters import HTTPAdapter
 SIMULATION_MODE = True  # True = فقط ثبت صوری و راستی‌آزمایی پر شدن روی داده‌های زنده بدون ارسال هیچ سفارش واقعی فروش
 
 # مشخصات کارگزاری مفید برای خواندن یا تمدید خودکار توکن ۱۲ ساعته (مشترک با سرخطی و شکارچی)
-MOFID_USERNAME = os.environ.get("MOFID_USERNAME", "").strip() or "09138156671"
-MOFID_PASSWORD = os.environ.get("MOFID_PASSWORD", "").strip() or "Asasmofid88"
+MOFID_USERNAME = os.environ.get("MOFID_USERNAME", "").strip() or ""
+MOFID_PASSWORD = os.environ.get("MOFID_PASSWORD", "").strip() or ""
 MIN_TOKEN_VALIDITY_MINUTES = 45
 AUTH_TOKEN = ""
 DEFAULT_EMOFID_SSO_COOKIES = {}  # حذف کوکی‌های منقضی‌شده قدیمی؛ احراز هویت کاملاً پویا با توکن ۱۲ ساعته انجام می‌شود
