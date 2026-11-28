@@ -1,31 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-نگهبان هوشمند پرتفوی مفید — سپر اول: محافظ سهامِ در صف خرید، سرخطی‌ها و عرضه‌های اولیه (نسخه تست صوری / Paper Trading)
+نگهبان هوشمند پرتفوی مفید — سپر اول: محافظ سهامِ در صف خرید و عرضه‌های اولیه (نسخه ۲.۲ — کاملاً مستقل و موازی)
 ========================================================================================================================
-ویژگی‌های کلیدی این نسخه (طراحی‌شده بر اساس کاتالوگ‌های HAR اوربیس و بورس‌ویو در پوشه for API):
-۱) شناسایی ۱۰۰٪ خودکار سهام موجود در پرتفوی کاربر (از طریق /assetmodule/api/performance و /gateway/user/portfolio)
-   و استثنا کردن خودکار صندوق‌های درآمد ثابت پارک نقدینگی (مانند آوند IRT3AVNF0001).
-۲) تشخیص هوشمند «سهام خریداری‌شده از صف خرید روزهای قبل (توسط کد سرخطی)» با ترکیب ۴ منبع:
-   - کندل‌های روزانه ۱۰ روز اخیر (/chart/api/v2/datafeed/history و /gateway/stockPattern) و شمارش روزهای متوالی صف خرید
-   - مقایسه درصد سود محقق‌نشده کاربر در پرتفوی با مجموع سود سلسله روزهای صف خرید سهم (تشخیص ورود در میانه صف با سرخطی)
-   - بررسی تاریخچه سفارش‌های خرید کاربر (/easy/api/orderHistory/orderReport) در بازه سرخطی 08:44:50 تا 08:45:30
-   - بررسی فایل تاریخچه سرخطی (ml_order_history.csv) در پوشه سرخطی گوگل درایو
-۳) شروع پایش از ساعت 08:45:00 صبح (ابتدای سفارش‌گذاری پیش‌گشایش) برای سهام سرخطی:
-   - حتی اگر در ساعت 08:50 صبح (پیش‌گشایش) صف خرید بریزد یا خریداران با شتاب بالا سفارش‌های خود را حذف کنند،
-     نگهبان منتظر ساعت 09:00 نمی‌ماند و در همان پیش‌گشایش دستور فروش صوری در سقف را ثبت می‌کند.
-۴) ماتریس ۵ لایه‌ای تصمیم‌گیری در بازار پیوسته (09:00:00 تا 12:30:00):
-   - لایه ۱ (SAFE_LOCKED): نگهداری امن تا زمانی که صف خرید مستحکم است (بدون وابستگی به ارزش ریالی ثابت، متناسب با تعداد سهام کاربر).
-   - لایه ۲ (TRIGGER_1_REAL_QUEUE_EROSION): ریزش >= 70% از اوج صف خرید همراه با حداقل 50% معامله واقعی در بازار.
-   - لایه ۳ (TRIGGER_2_FLASH_DUMP_VELOCITY): حمله رگباری فروشنده؛ خورده شدن >= 50% صف با معاملات واقعی و زمان تخمینی اتمام صف <= 8 ثانیه.
-   - لایه ۴ (TRIGGER_3_BUYER_CANCEL_PANIC): تشخیص «پشیمانی خریداران» از روی سرعت و شتاب بسیار زیادِ حذف سفارش‌ها در پنجره ۵ و ۱۰ ثانیه‌ای.
-   - لایه ۵ پشتیبان قطعی (TRIGGER_4_SARKHATI_NO_QUEUE_FAILSAFE): اگر کد با محاسبات لایه‌های قبلی نقطه اوج را درک نکرد،
-     برای سهام خریداری‌شده با سرخطی (که سود کاربر کمتر از سود روزهای صف خرید سهم است یا سابقه سرخطی دارد)،
-     در هر نقطه‌ای که دیگر صف خریدی نبیند بلافاصله در همان قیمت (به‌صورت صوری) می‌فروشد تا از سود کاسته نشود.
-۵) راستی‌آزمایی ۱۰۰٪ واقع‌گرایانه پر شدن سفارش در حالت صوری (Real Fill Verification) + رصد پس از خروج تا ساعت 12:30.
-۶) نسخه ۲.۱ (ساختار لاگ روزانه + سینک غیرمسدودکننده + محافظت ضدبازنویسی):
-   - ذخیره لاگ هر روز به‌صورت جداگانه در زیرپوشه ابری logs (بدون دست زدن به فایل آرشیو قبلی و با حفظ تجمعی signals.csv و state.json)
-   - انتقال سینک گوگل درایو به ترد پس‌زمینه غیر-daemon با قفل اتمیک و هندلر SIGTERM جهت جلوگیری از فریز حلقه ۰.۵ ثانیه‌ای
+ویژگی‌های کلیدی نسخه ۲.۲:
+۱) استقلال ۱۰۰٪ از پروژه سرخطی و شکارچی:
+   - قطع کامل خواندن/نوشتن token.txt و ml_order_history.csv از پوشه sarkhati (جلوگیری از تداخل حساب‌ها).
+   - تطبیق اجباری مالک توکن JWT (بر اساس phone_number / national_id) با MOFID_USERNAME تنظیم‌شده.
+۲) ملاک دقیق و واقعی «روزهای متوالی صف خرید بدون ریزش» (Unbroken Buy-Queue Streak):
+   - بدون وابستگی به تاریخچه سرخطی؛ شمارش صرفاً بر پایه قفل کامل کندل‌های روزهای اخیر در سقف مجاز (low == high == close)
+     همراه با رشد مثبت سقف (هرگونه ریزش یا باز شدن صف در طول روز قبل، زنجیره صف را قطع می‌کند).
+   - تفکیک کامل «سهم دارای سابقه صف خرید بدون ریزش از روزهای قبل» (پایش از ۰۸:۴۵ + لایه ۵ پشتیبان ۲ ثانیه‌ای)
+     از «سهم عادی پرتفوی» (اگر امروز صف خرید شد، فقط با لایه‌های ۲ تا ۴ و مهلت ۴ ثانیه‌ای بازگشت پایش می‌شود و هرگز
+     به اشتباه برچسب صف روزهای قبل نمی‌خورد).
+۳) پایش موازی و پرسرعت روی پرتفوی‌های بزرگ (۲۰+ نماد) با ThreadPoolExecutor و Sessionهای ایزوله:
+   - حذف فراخوانی تکراری MarketSheet/all، موازی‌سازی استعلام تابلو و عمق بازار، و تنظیم دقیق گام ۰.۵ ثانیه‌ای.
+۴) ماتریس ۵ لایه‌ای + محافظ توقف نماد توسط ناظر (`IS/AR/...`) + راستی‌آزمایی ۱۰۰٪ واقع‌گرایانه پر شدن در حالت صوری.
+۵) ذخیره لاگ روزانه مستقیماً در زیرپوشه logs (جلوگیری از تکثیر فایل لاگ در ریشه پوشه هنگام اجرای لوکال).
 """
 
 import base64
@@ -48,65 +39,66 @@ import requests
 from requests.adapters import HTTPAdapter
 
 # ==============================================================================
-# ۱. تنظیمات اصلی «سپر اول نگهبان پرتفوی» (حالت تست صوری / Simulation Mode)
+# ۱. تنظیمات اصلی «سپر اول نگهبان پرتفوی» (حالت ۱۰۰٪ تست صوری / Simulation Mode)
 # ==============================================================================
 SIMULATION_MODE = True  # True = فقط ثبت صوری و راستی‌آزمایی پر شدن روی داده‌های زنده بدون ارسال هیچ سفارش واقعی فروش
 
-# مشخصات کارگزاری مفید برای خواندن یا تمدید خودکار توکن ۱۲ ساعته (مشترک با سرخطی و شکارچی)
+# مشخصات حساب اختصاصی نگهبان پرتفوی (کاملاً مستقل از سرخطی و شکارچی)
 MOFID_USERNAME = os.environ.get("MOFID_USERNAME", "").strip() or ""
 MOFID_PASSWORD = os.environ.get("MOFID_PASSWORD", "").strip() or ""
 MIN_TOKEN_VALIDITY_MINUTES = 45
 AUTH_TOKEN = ""
-DEFAULT_EMOFID_SSO_COOKIES = {}  # حذف کوکی‌های منقضی‌شده قدیمی؛ احراز هویت کاملاً پویا با توکن ۱۲ ساعته انجام می‌شود
+DEFAULT_EMOFID_SSO_COOKIES = {}
 
 # نمادهای مستثنی در پرتفوی (صندوق‌های درآمد ثابت پارک نقدینگی و پشتوانه اعتبار که هرگز نباید فروخته شوند)
 IGNORED_PORTFOLIO_ISINS = {
     "IRT3AVNF0001",  # صندوق سرمایه‌گذاری با درآمد ثابت آوند
     "IRT1KARD0001",  # کاردان
     "IRT1LBKH0001",  # لبخند
-    # نکته: شناسه IRT3HAMF0001 متعلق به صندوق سهامی همسنگ است و از لیست سیاه حذف شد؛ صندوق درآمد ثابت حامی از طریق IGNORED_SYMBOL_KEYWORDS شناسایی و مستثنی می‌شود.
 }
 IGNORED_SYMBOL_KEYWORDS = ("آوند", "اوند", "حامی", "کاردان")
 
 # بازه‌های زمانی پایش (به وقت رسمی تهران IRST - UTC+03:30)
-PREMARKET_START_TIME_STR = "08:45:00"  # شروع رصد پیش‌گشایش برای سهام سرخطی
-PREMARKET_SETTLE_TIME_STR = "08:46:30"  # زمان شکل‌گیری اولیه صف پیش‌گشایش پس از شلیک سرخطی‌ها
-CONTINUOUS_START_TIME_STR = "09:00:00"  # شروع معاملات پیوسته بازار
+PREMARKET_START_TIME_STR = "08:45:00"        # شروع رصد پیش‌گشایش برای سهام دارای صف خرید روزهای قبل
+PREMARKET_SETTLE_TIME_STR = "08:46:30"       # زمان شکل‌گیری اولیه صف پیش‌گشایش
+CONTINUOUS_START_TIME_STR = "09:00:00"       # شروع معاملات پیوسته بازار
 CONTINUOUS_SAFE_GRACE_TIME_STR = "09:00:06"  # ۶ ثانیه تنفس حراج بازگشایی رأس ۰۹:۰۰ برای تثبیت تابلوی پیوسته
-MARKET_CLOSE_TIME_STR = "12:30:00"  # پایان بازار
-RUN_DIAGNOSTIC_OUTSIDE_HOURS = True  # اجرای اسکن تشخیصی کامل پرتفوی و سابقه چند روز اخیر حتی خارج از ساعت بازار
+MARKET_CLOSE_TIME_STR = "12:30:00"           # پایان بازار
+RUN_DIAGNOSTIC_OUTSIDE_HOURS = True          # اجرای اسکن تشخیصی کامل پرتفوی و سابقه کندل‌ها حتی خارج از ساعت بازار
 
-# فرکانس نمونه‌برداری زنده از تابلوی سهام پرتفوی
-PORTFOLIO_POLL_INTERVAL_SEC = 0.50  # پایش نیم‌ثانیه‌ای (۲ بار در ثانیه) به دلیل کم بودن تعداد سهام پرتفوی!
-DEEP_TELEMETRY_INTERVAL_SEC = 2.00  # استعلام حقیقی/حقوقی و عمق ۵ پله هر ۲ ثانیه
+# فرکانس نمونه‌برداری زنده و تنظیمات موازی‌سازی برای پرتفوی‌های پرنماد (۲۰+ نماد)
+PORTFOLIO_POLL_INTERVAL_SEC = 0.50           # گام دقیق نیم‌ثانیه‌ای (۲ بار در ثانیه)
+DEEP_TELEMETRY_INTERVAL_SEC = 2.00           # استعلام حقیقی/حقوقی هر ۲ ثانیه (فقط برای نمادهای در صف / نزدیک سقف)
+NORMAL_STOCK_SHEET_REFRESH_SEC = 5.00        # بازبینی دوره‌ای تابلو برای سهام عادی دور از سقف
+PARALLEL_POLL_MAX_WORKERS = 10               # تعداد ترد موازی برای استعلام هم‌زمان تابلوی نمادها
 
-# پارامترهای پیش‌گشایش (08:45:00 تا 08:59:59) ویژه سهام خریداری‌شده از صف خرید روزهای قبل (سرخطی):
-PREMARKET_PANIC_DROP_PCT = 55.0  # اگر در پیش‌گشایش بیش از ۵۵٪ اوج صف خرید پیش‌گشایش حذف شود
-PREMARKET_CANCEL_BURST_10S_PCT = 20.0  # و سرعت حذف سفارش در ۱۰ ثانیه اخیر >= ۲۰٪ اوج صف باشد -> خروج پیش‌گشایش
+# پارامترهای پیش‌گشایش (08:45:00 تا 08:59:59) ویژه سهام دارای زنجیره صف خرید واقعی بدون ریزش از روز قبل:
+PREMARKET_PANIC_DROP_PCT = 55.0              # اگر در پیش‌گشایش بیش از ۵۵٪ اوج صف خرید پیش‌گشایش حذف شود
+PREMARKET_CANCEL_BURST_10S_PCT = 20.0        # و سرعت حذف سفارش در ۱۰ ثانیه اخیر >= ۲۰٪ اوج صف باشد -> خروج پیش‌گشایش
 
 # پارامترهای ماتریس ۵ لایه‌ای در بازار پیوسته (09:00:00 تا 12:30:00) — بدون وابستگی به ارزش ریالی ثابت صف:
 # لایه ۲: فرسایش واقعی صف با معاملات سنگین (Real Queue Erosion)
-LAYER2_EROSION_DROP_FROM_PEAK_PCT = 70.0  # کاهش حداقل ۷۰٪ از اوج صف خرید معتبر روز (باقی‌مانده <= ۳۰٪ اوج)
-LAYER2_MIN_REAL_TRADED_RATIO = 0.50  # حداقل ۵۰٪ از کاهش صف از لحظه اوج باید با معاملات واقعی خورده شده باشد
-LAYER2_USER_QTY_SAFETY_MULTIPLE = 15.0  # ضریب ایمنی نسبت به تعداد سهام خودِ کاربر در پرتفوی
+LAYER2_EROSION_DROP_FROM_PEAK_PCT = 70.0     # کاهش حداقل ۷۰٪ از اوج صف خرید معتبر روز (باقی‌مانده <= ۳۰٪ اوج)
+LAYER2_MIN_REAL_TRADED_RATIO = 0.50          # حداقل ۵۰٪ از کاهش صف از لحظه اوج باید با معاملات واقعی خورده شده باشد
+LAYER2_USER_QTY_SAFETY_MULTIPLE = 15.0       # ضریب ایمنی نسبت به تعداد سهام خودِ کاربر در پرتفوی
 
-# لایه ۳: حمله رگباری / شتاب تخلیه آبشاری (Flash Dump Velocity — اصلاح‌شده از ۳۵٪ به ۵۰٪ طبق نظر کاربر)
-LAYER3_FLASH_MIN_DROP_FROM_PEAK_PCT = 50.0  # حداقل ۵۰٪ از اوج صف خرید باید خورده شده باشد (افزایش از ۳۵٪ به ۵۰٪)
-LAYER3_FLASH_MAX_SECONDS_TO_WIPEOUT = 8.0  # زمان تخمینی تا صفر شدن کامل صف خرید با نرخ بلعیده شدن ۵ ثانیه اخیر <= ۸ ثانیه
+# لایه ۳: حمله رگباری / شتاب تخلیه آبشاری (Flash Dump Velocity)
+LAYER3_FLASH_MIN_DROP_FROM_PEAK_PCT = 50.0   # حداقل ۵۰٪ از اوج صف خرید باید خورده شده باشد
+LAYER3_FLASH_MAX_SECONDS_TO_WIPEOUT = 8.0    # زمان تخمینی تا صفر شدن کامل صف خرید با نرخ ۵ ثانیه اخیر <= ۸ ثانیه
 LAYER3_FLASH_MIN_REAL_TRADE_RATIO_5S = 0.60  # حداقل ۶۰٪ ریزش ۵ ثانیه اخیر ناشی از معامله واقعی باشد
 
 # لایه ۴: پشیمانی دسته‌جمعی خریداران با سرعت و شتاب بالای حذف سفارش (Buyer Remorse Rapid Cancel Panic)
-LAYER4_CANCEL_MIN_TOTAL_DROP_PCT = 60.0  # مجموع افت صف نسبت به اوج به حداقل ۶۰٪ رسیده باشد
-LAYER4_CANCEL_10S_DROP_PCT_OF_PEAK = 35.0  # در ۱۰ ثانیه اخیر، حداقل ۳۵٪ کل اوج صف صرفاً با «حذف سفارش» غیب شده باشد
-LAYER4_CANCEL_MIN_VELOCITY_PCT_PER_SEC = 3.5  # سرعت حذف سفارش >= ۳.۵٪ اوج صف در هر ثانیه همراه با شتاب مثبت (Acceleration > 0)
+LAYER4_CANCEL_MIN_TOTAL_DROP_PCT = 60.0      # مجموع افت صف نسبت به اوج به حداقل ۶۰٪ رسیده باشد
+LAYER4_CANCEL_10S_DROP_PCT_OF_PEAK = 35.0    # در ۱۰ ثانیه اخیر، حداقل ۳۵٪ کل اوج صف صرفاً با «حذف سفارش» غیب شده باشد
+LAYER4_CANCEL_MIN_VELOCITY_PCT_PER_SEC = 3.5 # سرعت حذف سفارش >= ۳.۵٪ اوج صف در هر ثانیه همراه با شتاب مثبت
 
-# لایه ۵: حالت پشتیبان قطعی سهام سرخطی (Hard Fallback / No-Queue Fail-Safe)
-LAYER5_SARKHATI_FAILSAFE_CONFIRM_SEC = 2.0  # اگر سهم سرخطی است و به هر دلیلی صف خرید ندارد، حداکثر پس از ۲ ثانیه تأیید در همان قیمت می‌فروشد!
-NON_SARKHATI_POST_BREAK_GRACE_SEC = 4.0  # برای سهام عادی (غیرسرخطی) که امروز صف خرید شده و صفش باز شده، ۴ ثانیه فرصت بازگشت
+# لایه ۵: حالت پشتیبان قطعی سهام دارای زنجیره صف خرید واقعی بدون ریزش (Hard Fallback / No-Queue Fail-Safe)
+LAYER5_STREAK_FAILSAFE_CONFIRM_SEC = 2.0     # اگر سهم دارای صف خرید واقعی روز قبل است و صف خرید ندارد، پس از ۲ ثانیه تأیید خروج می‌زند
+NON_STREAK_POST_BREAK_GRACE_SEC = 4.0        # برای سهم عادی که امروز صف خرید شده و صفش باز شده، ۴ ثانیه فرصت بازگشت
 
 # پارامترهای تشخیص قفل مجدد پس از فروش (Whipsaw / Re-Lock Detector)
-RELOCK_MIN_RATIO_OF_PREV_PEAK = 0.50  # اگر پس از فروش، دوباره صف خرید تشکیل شد و به ۵۰٪ اوج قبلی رسید
-RELOCK_SUSTAIN_SECONDS = 60.0  # و ۶۰ ثانیه پایدار ماند -> ثبت رویداد قفل مجدد (Re-Lock)
+RELOCK_MIN_RATIO_OF_PREV_PEAK = 0.50         # اگر پس از فروش، دوباره صف خرید تشکیل شد و به ۵۰٪ اوج قبلی رسید
+RELOCK_SUSTAIN_SECONDS = 60.0                # و ۶۰ ثانیه پایدار ماند -> ثبت رویداد قفل مجدد (Re-Lock)
 
 
 def get_tehran_now():
@@ -117,7 +109,7 @@ def get_tehran_now():
 
 
 # ==============================================================================
-# ۲. مسیر فایل‌ها و ماژول همگام‌سازی خودکار، ضدبازنویسی و غیرمسدودکننده با گوگل درایو
+# ۲. مسیر فایل‌ها و ماژول همگام‌سازی خودکار، مستقل، ضدبازنویسی و غیرمسدودکننده با گوگل درایو
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = BASE_DIR
@@ -127,13 +119,19 @@ TODAY_LOG_DATE_STR = get_tehran_now().strftime("%Y-%m-%d")
 GUARDIAN_LOG_FILENAME = f"guardian_shield1_log_{TODAY_LOG_DATE_STR}.txt"
 GDRIVE_LOGS_SUBFOLDER_NAME = "logs"
 
-GUARDIAN_LOG_TXT = os.path.join(DATA_DIR, GUARDIAN_LOG_FILENAME)
+# ذخیره لاگ محلی مستقیماً درون زیرپوشه logs جهت جلوگیری از تکثیر فایل لاگ در ریشه پوشه درایو
+LOCAL_LOGS_DIR = os.path.join(DATA_DIR, GDRIVE_LOGS_SUBFOLDER_NAME)
+try:
+    os.makedirs(LOCAL_LOGS_DIR, exist_ok=True)
+except Exception:
+    LOCAL_LOGS_DIR = DATA_DIR
+
+GUARDIAN_LOG_TXT = os.path.join(LOCAL_LOGS_DIR, GUARDIAN_LOG_FILENAME)
 GUARDIAN_SIGNALS_CSV = os.path.join(DATA_DIR, "guardian_shield1_signals.csv")
 GUARDIAN_STATE_JSON = os.path.join(DATA_DIR, "guardian_shield1_state.json")
 
-# شناسه پوشه اختصاصی نگهبان پرتفوی (portfolio_guardian در داخل فولدر sarkhati)
+# شناسه پوشه اختصاصی نگهبان پرتفوی (کاملاً ایزوله از پوشه sarkhati)
 DEFAULT_GDRIVE_FOLDER_ID = "1KkgW8YvKu6ZR2UjPHXHJRlQQhlnE7NE8"
-SARKHATI_PARENT_FOLDER_ID = "1n0cW933TdKQRczVB0wunYtMrDRLbKXQn"
 DEFAULT_GDRIVE_CLIENT_ID = ""
 DEFAULT_GDRIVE_CLIENT_SECRET = ""
 DEFAULT_GDRIVE_REFRESH_TOKEN = ""
@@ -146,6 +144,21 @@ _GDRIVE_SYNC_PENDING = False
 _GDRIVE_SYNC_THREAD = None
 _STATE_SYNC_INITIALIZED = False
 _CACHED_LOGS_FOLDER_ID = None
+
+_THREAD_LOCAL_HTTP = threading.local()
+_SHARED_POLL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=PARALLEL_POLL_MAX_WORKERS)
+
+
+def _get_thread_local_session():
+    """ایجاد و نگهداری requests.Session اختصاصی برای هر ترد جهت تضمین Thread-Safety کامل در پایش موازی"""
+    sess = getattr(_THREAD_LOCAL_HTTP, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        adapter = HTTPAdapter(pool_connections=16, pool_maxsize=16, max_retries=1)
+        sess.mount("https://", adapter)
+        sess.mount("http://", adapter)
+        _THREAD_LOCAL_HTTP.session = sess
+    return sess
 
 
 def _get_gdrive_access_token():
@@ -191,11 +204,6 @@ def _gdrive_find_file_id_checked(access_token, folder_id, filename):
     except Exception:
         pass
     return False, None
-
-
-def _gdrive_find_file_id(access_token, folder_id, filename):
-    ok, fid = _gdrive_find_file_id_checked(access_token, folder_id, filename)
-    return fid if ok else None
 
 
 def _gdrive_find_or_create_subfolder(access_token, parent_folder_id, subfolder_name):
@@ -318,18 +326,15 @@ def _gdrive_upload_text(access_token, folder_id, filename, text_content, mime_ty
         return False
 
 
-SARKHATI_ML_HISTORY_TEXT_CACHE = ""
-
-
 def pull_files_from_gdrive_on_startup():
-    """همگام‌سازی اولیه وضعیت نگهبان، توکن مشترک، لاگ روزانه امروز و تاریخچه سرخطی از گوگل درایو"""
-    global SARKHATI_ML_HISTORY_TEXT_CACHE, _STATE_SYNC_INITIALIZED
+    """همگام‌سازی اولیه صرفاً از پوشه اختصاصی portfolio_guardian (بدون هیچ ارتباطی با پوشه sarkhati)"""
+    global _STATE_SYNC_INITIALIZED
     access_token, folder_id = _get_gdrive_access_token()
     if not access_token:
         return False
 
     synced_any = False
-    # ۱) فایل‌های تجمعی اصلی در پوشه ریشه نگهبان
+    # ۱) فایل‌های تجمعی اختصاصی در پوشه portfolio_guardian
     for fname, local_path in (
         ("guardian_shield1_state.json", GUARDIAN_STATE_JSON),
         ("guardian_shield1_signals.csv", GUARDIAN_SIGNALS_CSV),
@@ -338,10 +343,6 @@ def pull_files_from_gdrive_on_startup():
         ok_f, fid = _gdrive_find_file_id_checked(access_token, folder_id, fname)
         if not ok_f:
             continue
-        if not fid and fname == "token.txt":
-            ok_t, fid = _gdrive_find_file_id_checked(access_token, SARKHATI_PARENT_FOLDER_ID, "token.txt")
-            if not ok_t:
-                continue
         if not fid:
             if fname == "guardian_shield1_state.json":
                 _STATE_SYNC_INITIALIZED = True
@@ -379,15 +380,8 @@ def pull_files_from_gdrive_on_startup():
                 except Exception:
                     pass
 
-    # ۳) خواندن تاریخچه سفارش‌های سرخطی (ml_order_history.csv) از پوشه اصلی سرخطی برای تشخیص دقیق سهام خریداری‌شده با سرخطی
-    fid_ml_csv = _gdrive_find_file_id(access_token, SARKHATI_PARENT_FOLDER_ID, "ml_order_history.csv")
-    if fid_ml_csv:
-        ml_csv_txt = _gdrive_download_text(access_token, fid_ml_csv)
-        if ml_csv_txt:
-            SARKHATI_ML_HISTORY_TEXT_CACHE = ml_csv_txt
-
     if synced_any:
-        print(f"[+] همگام‌سازی اولیه با پوشه نگهبان در گوگل درایو (لاگ روزانه: {GDRIVE_LOGS_SUBFOLDER_NAME}/{GUARDIAN_LOG_FILENAME}) با موفقیت انجام شد.")
+        print(f"[+] همگام‌سازی اولیه مستقل با پوشه نگهبان در گوگل درایو (لاگ روزانه: {GDRIVE_LOGS_SUBFOLDER_NAME}/{GUARDIAN_LOG_FILENAME}) با موفقیت انجام شد.")
     return synced_any
 
 
@@ -421,7 +415,7 @@ def push_guardian_files_to_gdrive():
         except Exception:
             local_log = None
 
-    # ۱) آپلود امن guardian_shield1_state.json (محافظت ضدبازنویسی روی خطای شبکه یا state عقب‌تر)
+    # ۱) آپلود امن guardian_shield1_state.json
     if st_txt and st_txt.strip():
         try:
             ok_st, fid_st = _gdrive_find_file_id_checked(access_token, folder_id, "guardian_shield1_state.json")
@@ -450,7 +444,7 @@ def push_guardian_files_to_gdrive():
         except Exception:
             pass
 
-    # ۲) آپلود و ادغام امن guardian_shield1_signals.csv (اگر دانلود نسخه درایو خطا داد، بازنویسی متوقف می‌شود)
+    # ۲) آپلود و ادغام امن guardian_shield1_signals.csv
     if local_csv and local_csv.strip():
         try:
             ok_csv, fid_csv = _gdrive_find_file_id_checked(access_token, folder_id, "guardian_shield1_signals.csv")
@@ -471,7 +465,7 @@ def push_guardian_files_to_gdrive():
                                 if sid and sid not in ("SHIELD1-20261114-085114-0001", "SHIELD1-20261117-092046-0001"):
                                     if sid not in seen_ids:
                                         order_keys.append(sid)
-                                    seen_ids[sid] = row_ln  # آخرین وضعیت (شامل قیمت ۱۲:۳۰) جایگزین می‌شود
+                                    seen_ids[sid] = row_ln
                         merged_rows = ([header] if header else []) + [seen_ids[k] for k in order_keys]
                         final_csv = "\ufeff" + "\n".join(merged_rows) + "\n"
                     else:
@@ -482,7 +476,7 @@ def push_guardian_files_to_gdrive():
         except Exception:
             pass
 
-    # ۳) آپلود امن لاگ روزانه سبک در زیرپوشه logs (بدون دست زدن به guardian_shield1_log.txt آرشیوی)
+    # ۳) آپلود امن لاگ روزانه سبک در زیرپوشه logs
     if local_log and local_log.strip():
         try:
             ok_dir, logs_fid = _gdrive_find_or_create_subfolder(access_token, folder_id, GDRIVE_LOGS_SUBFOLDER_NAME)
@@ -548,8 +542,9 @@ def flush_and_wait_gdrive_sync(timeout=35.0):
         except Exception:
             pass
 
+
 # ==============================================================================
-# ۳. اندپوینت‌های رسمی Orbis و BourseView کارگزاری مفید (استخراج‌شده از پوشه for API)
+# ۳. اندپوینت‌های رسمی Orbis و BourseView کارگزاری مفید
 # ==============================================================================
 OIDC_ISSUER = "https://login.emofid.com"
 OIDC_AUTHORIZE_URL = f"{OIDC_ISSUER}/connect/authorize"
@@ -580,18 +575,7 @@ BV_STOCK_IND_INST_URL_TPL = f"{BV_BASE}/stockIndInst?isin={{isin}}"
 
 
 def decode_symbol_state_code(state_code_raw):
-    """
-    رمزگشایی دقیق کد وضعیت نماد (stateCode) بر اساس منطق استخراج‌شده از سورس‌کد ایزی‌تریدر (ITe / nL / _z):
-    - "A"  -> مجاز (سبز - باز و قابل معامله در بازار پیوسته و پیش‌گشایش)
-    - "AR" -> مجاز-محفوظ (زرد - مرحله پیش‌گشایش/حراج بازگشایی نماد؛ در بازار پیوسته متوقف است)
-    - "AS" -> مجاز-متوقف (زرد - متوقف توسط ناظر)
-    - "AG" -> مجاز-مسدود (زرد - مسدود)
-    - "I"  -> ممنوع (قرمز - بسته/متوقف)
-    - "IS" -> ممنوع-متوقف (قرمز - بسته شده توسط ناظر بازار، مثلاً به دلیل رشد بیش از ۵۰٪ یا کنفرانس اطلاعاتی)
-    - "IR" -> ممنوع-محفوظ (قرمز - بسته)
-    - "IG" -> ممنوع-مسدود (قرمز - بسته)
-    خروجی: (persian_title, color_tag, is_open_continuous, is_open_premarket)
-    """
+    """رمزگشایی دقیق کد وضعیت نماد (stateCode) در هسته معاملات"""
     sc = str(state_code_raw or "A").strip().upper()
     mapping = {
         "A": ("مجاز (باز)", "green", True, True),
@@ -612,6 +596,7 @@ def decode_symbol_state_code(state_code_raw):
     return ("مجاز (باز)", "green", True, True)
 
 
+# حفظ دقیق نام ستون‌های CSV جهت سازگاری کامل با داده‌های تجمعی قبلی
 CSV_COLUMNS = [
     "signal_id",
     "date",
@@ -668,10 +653,11 @@ class GuardianTeeLogger:
         self.log_file = None
         self._lock = threading.Lock()
         try:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
             self.log_file = open(log_path, "a", encoding="utf-8")
             now_ir = get_tehran_now().strftime("%Y-%m-%d %H:%M:%S")
             self.log_file.write(
-                f"\n{'='*84}\n=== شروع نشست نگهبان پرتفوی (سپر اول - حالت صوری) در تاریخ: {now_ir} (IRST) ===\n{'='*84}\n"
+                f"\n{'='*84}\n=== شروع نشست نگهبان پرتفوی (سپر اول - نسخه ۲.۲ - حالت صوری) در تاریخ: {now_ir} (IRST) ===\n{'='*84}\n"
             )
             self.log_file.flush()
         except Exception:
@@ -715,7 +701,7 @@ class GuardianTeeLogger:
 
 
 # ==============================================================================
-# ۴. احراز هویت خودکار OIDC بدون مرورگر و اشتراک توکن با پوشه سرخطی
+# ۴. احراز هویت خودکار OIDC مستقل + تطبیق اجباری مالک توکن با MOFID_USERNAME
 # ==============================================================================
 class _LoginFormParser(HTMLParser):
     def __init__(self):
@@ -742,6 +728,13 @@ class _LoginFormParser(HTMLParser):
             self.in_form = False
 
 
+def _normalize_digits(s):
+    if not s:
+        return ""
+    trans = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+    return re.sub(r"\D+", "", str(s).translate(trans))
+
+
 def decode_jwt_payload_safe(token_str):
     try:
         raw = token_str.strip()
@@ -759,6 +752,34 @@ def decode_jwt_payload_safe(token_str):
         )
     except Exception:
         return None
+
+
+def check_token_matches_configured_user(payload, configured_username):
+    """تأیید قطعی اینکه توکن موجود متعلق به همان نام کاربری (موبایل یا کد ملی) تنظیم‌شده است"""
+    if not isinstance(payload, dict):
+        return False
+    cfg_raw = str(configured_username or "").strip()
+    if not cfg_raw:
+        return True
+    cfg_digits = _normalize_digits(cfg_raw)
+    tok_phone = _normalize_digits(payload.get("phone_number") or "")
+    tok_nid = _normalize_digits(payload.get("national_id") or "")
+    tok_uname = str(payload.get("preferred_username") or payload.get("username") or "").strip().lower()
+
+    if tok_uname and tok_uname == cfg_raw.lower():
+        return True
+    if cfg_digits:
+        if tok_nid and cfg_digits == tok_nid:
+            return True
+        if tok_phone:
+            if cfg_digits == tok_phone:
+                return True
+            if len(cfg_digits) >= 10 and len(tok_phone) >= 10 and cfg_digits[-10:] == tok_phone[-10:]:
+                return True
+        # اگر در JWT حداقل یکی از phone_number یا national_id وجود داشت ولی با کاربر ما نخواند -> مطمئناً حساب دیگری است!
+        if tok_phone or tok_nid:
+            return False
+    return True
 
 
 def check_token_remaining_minutes(token_str):
@@ -877,6 +898,7 @@ def fetch_mofid_token_headless():
 
 
 def ensure_valid_token():
+    """بررسی اعتبار و تطابق قطعی مالک توکن با MOFID_USERNAME و ذخیره صرفاً در پوشه اختصاصی portfolio_guardian"""
     global AUTH_TOKEN
     candidates = []
     if AUTH_TOKEN and len(AUTH_TOKEN.strip()) > 30:
@@ -890,33 +912,42 @@ def ensure_valid_token():
         except Exception:
             pass
 
+    mismatch_seen = False
     for cand in candidates:
         norm = cand if cand.lower().startswith("bearer ") else f"Bearer {cand}"
         ok, rem_m, payload = check_token_remaining_minutes(norm)
         if ok:
+            if not check_token_matches_configured_user(payload, MOFID_USERNAME):
+                mismatch_seen = True
+                continue
             AUTH_TOKEN = norm
             name = (payload or {}).get("display_name") or "کاربر مفید"
-            return True, f"معتبر ({name} | اعتبار باقی‌مانده: {int(rem_m // 60)} ساعت و {int(rem_m % 60)} دقیقه)"
+            return True, f"معتبر و منطبق با حساب تنظیم‌شده ({name} | اعتبار باقی‌مانده: {int(rem_m // 60)} ساعت و {int(rem_m % 60)} دقیقه)"
 
-    print("[*] توکن فعلی منقضی است؛ در حال دریافت خودکار توکن ۱۲ ساعته جدید بدون مرورگر...")
+    if mismatch_seen:
+        print("[*] توکن موجود متعلق به حساب دیگری بود و نادیده گرفته شد؛ در حال دریافت توکن اختصاصی برای حساب تنظیم‌شده...")
+    else:
+        print("[*] توکن فعلی منقضی/ناموجود است؛ در حال دریافت خودکار توکن ۱۲ ساعته اختصاصی نگهبان بدون مرورگر...")
+
     new_tok = fetch_mofid_token_headless()
     if new_tok:
         AUTH_TOKEN = new_tok
         try:
-            with open(TOKEN_FILE, "w", encoding="utf-8") as f:
-                f.write(new_tok)
+            with _LOCAL_FILE_LOCK:
+                with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+                    f.write(new_tok)
         except Exception:
             pass
         try:
             acc_tok, folder_id = _get_gdrive_access_token()
             if acc_tok:
+                # آپلود صرفاً در پوشه اختصاصی portfolio_guardian (هرگز در پوشه sarkhati نوشته نمی‌شود)
                 _gdrive_upload_text(acc_tok, folder_id, "token.txt", new_tok, "text/plain")
-                _gdrive_upload_text(acc_tok, SARKHATI_PARENT_FOLDER_ID, "token.txt", new_tok, "text/plain")
         except Exception:
             pass
         _, rem_m, payload = check_token_remaining_minutes(new_tok)
         name = (payload or {}).get("display_name") or "کاربر مفید"
-        return True, f"توکن جدید دریافت شد ({name} | اعتبار: {int(rem_m // 60)} ساعت و {int(rem_m % 60)} دقیقه)"
+        return True, f"توکن اختصاصی جدید دریافت شد ({name} | اعتبار: {int(rem_m // 60)} ساعت و {int(rem_m % 60)} دقیقه)"
 
     return False, "عدم موفقیت در دریافت توکن"
 
@@ -955,13 +986,22 @@ def get_default_commission_rates(isin_code):
 
 
 # ==============================================================================
-# ۵. فاز ۱: اسکن خودکار پرتفوی، کندل‌های روزهای اخیر و تشخیص سهام خریداری‌شده با سرخطی
+# ۵. فاز ۱: اسکن موازی پرتفوی و تشخیص دقیق «روزهای متوالی صف خرید واقعی بدون ریزش»
 # ==============================================================================
 def fetch_symbol_multi_day_history(session, headers, isin):
+    """
+    شمارش دقیق روزهای متوالی «صف خرید واقعی بدون ریزش» (Unbroken Buy-Queue Streak):
+    ملاک واقعی برای هر روز کامل‌شده: قفل کامل کندل در سقف مجاز (open == low == high == close
+    با تلورانس حداکثر ۱ پله / ۰.۲٪) همراه با رشد مثبت سقف روزانه.
+    هرگونه نوسان یا ریزش صف در طول روز (low < high) زنجیره را قطع می‌کند.
+    """
     consecutive_bq_days = 0
     streak_return_pct = 0.0
     recent_summary = []
 
+    now_ir = get_tehran_now()
+    today_ir_str = now_ir.strftime("%Y-%m-%d")
+    now_ir_hms = now_ir.strftime("%H:%M:%S")
     now_epoch = int(time.time()) + 86400
     candles = []
 
@@ -989,6 +1029,7 @@ def fetch_symbol_multi_day_history(session, headers, isin):
                         "l": float(l_arr[i]),
                         "c": float(c_arr[i]),
                         "v": int(v_arr[i]) if i < len(v_arr) else 0,
+                        "has_ohlc": True,
                     }
                 )
     except Exception:
@@ -1017,34 +1058,60 @@ def fetch_symbol_multi_day_history(session, headers, isin):
                                 "l": c_val,
                                 "c": c_val,
                                 "v": 0,
+                                "has_ohlc": False,
                             }
                         )
         except Exception:
             pass
 
     if len(candles) >= 2:
-        streak_start_price = candles[-1]["c"]
-        streak_end_price = candles[-1]["c"]
-        for idx in range(len(candles) - 1, 0, -1):
+        # اگر در میانه ساعات بازار امروز اجرا شدیم و کندل ناقص امروز در انتهای لیست است، آن را از شمارش روزهای قبل کنار بگذار
+        end_idx = len(candles) - 1
+        if candles[end_idx]["date"] == today_ir_str and now_ir_hms < MARKET_CLOSE_TIME_STR and end_idx >= 1:
+            end_idx -= 1
+
+        min_gain_pct = 1.80 if isin.upper().startswith("IRO7") else 2.35
+        streak_start_price = candles[end_idx]["c"]
+        streak_end_price = candles[end_idx]["c"]
+
+        for idx in range(end_idx, 0, -1):
             curr_c = candles[idx]
             prev_c = candles[idx - 1]
             if prev_c["c"] <= 0:
                 break
             daily_chg_pct = ((curr_c["c"] - prev_c["c"]) / prev_c["c"]) * 100.0
-            daily_high_chg_pct = ((curr_c["h"] - prev_c["c"]) / prev_c["c"]) * 100.0
-            closed_at_high = abs(curr_c["c"] - curr_c["h"]) <= max(10.0, curr_c["h"] * 0.002)
-            flat_ceiling_candle = (
-                abs(curr_c["o"] - curr_c["h"]) <= max(10.0, curr_c["h"] * 0.001)
-                and abs(curr_c["l"] - curr_c["h"]) <= max(10.0, curr_c["h"] * 0.002)
-                and daily_chg_pct >= 1.80
-            )
-            is_buy_queue_day = (closed_at_high and daily_chg_pct >= 2.35) or flat_ceiling_candle or (daily_high_chg_pct >= 2.75 and daily_chg_pct >= 2.20)
-            recent_summary.append(f"{curr_c['date']}: {int(curr_c['c']):,} ({daily_chg_pct:+.2f}%)")
-            if is_buy_queue_day:
+            tol = max(10.0, curr_c["h"] * 0.002)
+
+            if curr_c.get("has_ohlc", True):
+                closed_at_high = abs(curr_c["c"] - curr_c["h"]) <= tol
+                no_intraday_break = abs(curr_c["h"] - curr_c["l"]) <= tol
+                opened_at_high = abs(curr_c["o"] - curr_c["h"]) <= tol
+                is_unbroken_bq_day = (
+                    closed_at_high
+                    and no_intraday_break
+                    and opened_at_high
+                    and (daily_chg_pct >= min_gain_pct)
+                )
+            else:
+                is_unbroken_bq_day = (daily_chg_pct >= min_gain_pct)
+
+            if is_unbroken_bq_day:
+                day_tag = "قفل"
+            elif abs(daily_chg_pct) < 0.05:
+                day_tag = "متوقف/بدون‌تغییر"
+            elif curr_c.get("has_ohlc", True) and abs(curr_c["h"] - curr_c["l"]) > tol and daily_chg_pct >= min_gain_pct:
+                day_tag = "صف‌ریخته‌شده"
+            else:
+                day_tag = "عادی"
+
+            recent_summary.append(f"{curr_c['date']}: {int(curr_c['c']):,} ({daily_chg_pct:+.2f}% | {day_tag})")
+
+            if is_unbroken_bq_day:
                 consecutive_bq_days += 1
                 streak_start_price = prev_c["c"]
             else:
-                if idx == len(candles) - 1 and abs(daily_chg_pct) < 0.05:
+                # اگر آخرین روز نماد متوقف/بدون تغییر بود (مثل نماد متوقف‌شده IS)، روز قبلش را بررسی کن
+                if idx == end_idx and abs(daily_chg_pct) < 0.05:
                     streak_end_price = prev_c["c"]
                     continue
                 break
@@ -1062,51 +1129,6 @@ def fetch_symbol_multi_day_history(session, headers, isin):
         "streak_cumulative_return_pct": round(streak_return_pct, 2),
         "recent_days_summary": " | ".join(recent_summary[:5]),
     }
-
-
-def check_user_sarkhati_order_history(session, headers, isin, symbol_name):
-    reasons = []
-
-    if SARKHATI_ML_HISTORY_TEXT_CACHE:
-        for ln in SARKHATI_ML_HISTORY_TEXT_CACHE.splitlines():
-            if isin in ln or (symbol_name and symbol_name in ln):
-                if "ACCEPTED_IN_QUEUE" in ln or "True" in ln:
-                    reasons.append("ثبت‌شده در تاریخچه سفارش‌های موفق کد سرخطی (ml_order_history.csv)")
-                    break
-
-    try:
-        payload = {
-            "sieveModel": {
-                "page": 1,
-                "pageSize": 15,
-                "filters": [
-                    {"column": "symbolIsin", "operator": 0, "value": isin},
-                    {
-                        "column": "orderState",
-                        "operator": 9,
-                        "value": [0, 1, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 35, 36, 40, 67],
-                    },
-                ],
-                "sort": {"column": "createDateTime", "dir": 1},
-            },
-            "searchTadbir": True,
-        }
-        r = session.post(ORDER_REPORT_HISTORY_URL, data=json.dumps(payload).encode("utf-8"), headers=headers, timeout=4.0)
-        if r.status_code == 200 and r.text:
-            records = (r.json() or {}).get("records") or []
-            for rec in records:
-                rep = rec.get("orderReport") or {}
-                side = int(rep.get("side") if rep.get("side") is not None else -1)
-                exec_qty = int(rep.get("executedQuantity") or 0)
-                c_dt = str(rep.get("createDateTime") or "")
-                if side == 0 and exec_qty > 0:
-                    if "T08:44:" in c_dt or "T08:45:" in c_dt or "T08:46:" in c_dt:
-                        reasons.append(f"خرید پرشده در تایم سرخطی ({c_dt[:19]}) به تعداد {exec_qty:,} سهم")
-                        break
-    except Exception:
-        pass
-
-    return reasons
 
 
 def register_orbis_session_properly(session, headers):
@@ -1212,6 +1234,10 @@ def fetch_bourseview_authenticated_portfolio():
 
 
 def discover_and_classify_portfolio(session, headers):
+    """
+    کشف خودکار تمام سهام پرتفوی حساب فعلی و طبقه‌بندی موازی بر اساس معیار خالص
+    «روزهای متوالی صف خرید واقعی بدون ریزش» (بدون هیچ وابستگی به فایل‌های سرخطی).
+    """
     portfolio_map = {}
     ignored_holdings_info = []
     get_headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
@@ -1288,13 +1314,7 @@ def discover_and_classify_portfolio(session, headers):
                 "sieveModel": {
                     "page": 1,
                     "pageSize": 100,
-                    "filters": [
-                        {
-                            "column": "orderState",
-                            "operator": 9,
-                            "value": [5, 8],
-                        },
-                    ],
+                    "filters": [{"column": "orderState", "operator": 9, "value": [5, 8]}],
                     "sort": {"column": "createDateTime", "dir": 1},
                 },
                 "searchTadbir": True,
@@ -1361,7 +1381,6 @@ def discover_and_classify_portfolio(session, headers):
         pass
 
     active_sell_orders_by_isin = {}
-    active_buy_orders_by_isin = {}
     try:
         r_ord = session.get(ACTIVE_ORDERS_URL, headers=get_headers, timeout=4.0)
         if r_ord.status_code == 200 and r_ord.text:
@@ -1370,58 +1389,29 @@ def discover_and_classify_portfolio(session, headers):
                 st_str = str(o.get("orderStateStr") or "")
                 side = int(o.get("side") if o.get("side") is not None else -1)
                 o_isin = str(o.get("symbolIsin") or "")
-                if st_str in ("InMarket", "OnBoard", "OnSending", "PartiallyExecution"):
-                    if side == 1:
-                        active_sell_orders_by_isin[o_isin] = o
-                    elif side == 0:
-                        active_buy_orders_by_isin[o_isin] = o
-                        if o_isin and o_isin not in portfolio_map:
-                            exec_q = int(o.get("executedQuantity") or 0)
-                            if exec_q > 0:
-                                p_ord = float(o.get("price") or 0.0)
-                                portfolio_map[o_isin] = {
-                                    "symbol_isin": o_isin,
-                                    "symbol_name": str(o.get("symbolName") or o_isin),
-                                    "quantity": exec_q,
-                                    "breakeven_price_rials": round(p_ord * 1.0125, 2),
-                                    "buy_avg_price_rials": p_ord,
-                                    "last_buy_date": get_tehran_now().strftime("%Y-%m-%d"),
-                                    "persian_buy_date": "",
-                                    "daily_bought_vol": exec_q,
-                                }
+                if st_str in ("InMarket", "OnBoard", "OnSending", "PartiallyExecution") and side == 1:
+                    active_sell_orders_by_isin[o_isin] = o
+                if o_isin and o_isin not in portfolio_map and side == 0:
+                    exec_q = int(o.get("executedQuantity") or 0)
+                    if exec_q > 0:
+                        p_ord = float(o.get("price") or 0.0)
+                        portfolio_map[o_isin] = {
+                            "symbol_isin": o_isin,
+                            "symbol_name": str(o.get("symbolName") or o_isin),
+                            "quantity": exec_q,
+                            "breakeven_price_rials": round(p_ord * 1.0125, 2),
+                            "buy_avg_price_rials": p_ord,
+                            "last_buy_date": get_tehran_now().strftime("%Y-%m-%d"),
+                            "persian_buy_date": "",
+                            "daily_bought_vol": exec_q,
+                        }
     except Exception:
         pass
 
-    # استعلام جایگاه لحظه‌ای در صف (orderPlace و volumeAhead) — اصلاح آدرس با API_BASE
-    buy_order_places_by_isin = {}
-    if active_buy_orders_by_isin:
-        try:
-            pl_payload = []
-            for b_isin, b_ord in active_buy_orders_by_isin.items():
-                if b_ord.get("id") and b_ord.get("hon") is not None and b_ord.get("createDateTime"):
-                    pl_payload.append({
-                        "orderId": str(b_ord["id"]),
-                        "symbolIsin": b_isin,
-                        "hon": int(b_ord["hon"]),
-                        "createDateTime": str(b_ord["createDateTime"]),
-                        "side": 0,
-                        "price": int(b_ord.get("price") or 0),
-                    })
-            if pl_payload:
-                r_pl = session.post(
-                    f"{API_BASE}/ms/api/MarketSheet/order-place?actionType=0",
-                    data=json.dumps(pl_payload).encode("utf-8"),
-                    headers=headers,
-                    timeout=3.5,
-                )
-                if r_pl.status_code == 200 and r_pl.text:
-                    for p_it in ((r_pl.json() or {}).get("orderPlaces") or []):
-                        if isinstance(p_it, dict) and p_it.get("symbolIsin"):
-                            buy_order_places_by_isin[str(p_it["symbolIsin"])] = p_it
-        except Exception:
-            pass
-
-    for isin, info in portfolio_map.items():
+    # استعلام موازی MarketSheet/all، symbol-info-data و کندل‌های روزانه برای تمام نمادهای پرتفوی
+    def _enrich_one_symbol(isin):
+        t_sess = _get_thread_local_session()
+        info = portfolio_map[isin]
         snap = live_snaps.get(isin, {})
         high_allowed = int(snap.get("highAllowedPrice") or 0)
         low_allowed = int(snap.get("lowAllowedPrice") or 0)
@@ -1433,7 +1423,7 @@ def discover_and_classify_portfolio(session, headers):
         best_sell_q = int(snap.get("bestSellQuantity") or 0)
 
         try:
-            r_ms0 = session.get(MARKET_SHEET_ALL_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.5)
+            r_ms0 = t_sess.get(MARKET_SHEET_ALL_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.8)
             if r_ms0.status_code == 200 and r_ms0.text:
                 ms0 = r_ms0.json() or {}
                 b_sh0 = [x for x in (ms0.get("buySheets") or []) if isinstance(x, dict) and int(x.get("volume") or 0) > 0]
@@ -1465,7 +1455,7 @@ def discover_and_classify_portfolio(session, headers):
 
         vol_30_avg = 0
         try:
-            r_si = session.post(SYMBOL_INFO_DATA_URL, data=json.dumps({"isin": isin}).encode("utf-8"), headers=headers, timeout=3.5)
+            r_si = t_sess.post(SYMBOL_INFO_DATA_URL, data=json.dumps({"isin": isin}).encode("utf-8"), headers=headers, timeout=3.0)
             if r_si.status_code == 200 and r_si.text:
                 si = r_si.json() or {}
                 vol_30_avg = int(si.get("volume30AVG") or si.get("volume90Avg") or 0)
@@ -1476,7 +1466,7 @@ def discover_and_classify_portfolio(session, headers):
         except Exception:
             pass
 
-        hist = fetch_symbol_multi_day_history(session, headers, isin)
+        hist = fetch_symbol_multi_day_history(t_sess, headers, isin)
         consec_bq_days = hist["consecutive_buy_queue_days"]
         streak_ret_pct = hist["streak_cumulative_return_pct"]
 
@@ -1488,9 +1478,6 @@ def discover_and_classify_portfolio(session, headers):
 
         user_profit_pct = ((ref_curr_price - breakeven) / breakeven) * 100.0 if breakeven > 0 else 0.0
 
-        order_reasons = check_user_sarkhati_order_history(session, headers, isin, info["symbol_name"])
-        sarkhati_reasons = list(order_reasons)
-
         competing_sell_init = best_sell_q if (0 < best_sell_p <= high_allowed and best_sell_q > 0) else 0
         has_strong_net_bq = (
             best_buy_p > 0
@@ -1499,102 +1486,108 @@ def discover_and_classify_portfolio(session, headers):
             and best_buy_q > max(info["quantity"] * 2, competing_sell_init * 3)
         )
 
+        # معیار خالص و بدون وابستگی بیرونی: صرفاً وجود زنجیره واقعی صف خرید بدون ریزش از روز(های) قبل
+        is_prior_buy_queue_streak = consec_bq_days >= 1
+        classification_reasons = []
         if consec_bq_days >= 1:
-            sarkhati_reasons.append(
-                f"سهم در {consec_bq_days} روز کاری اخیر در صف خرید بوده است (بازدهی سلسله صف: +{streak_ret_pct:.2f}%)"
+            classification_reasons.append(
+                f"{consec_bq_days} روز متوالی صف خرید واقعی بدون ریزش (بازدهی سلسله صف: +{streak_ret_pct:.2f}%)"
             )
-        if consec_bq_days >= 2 and streak_ret_pct > 0 and user_profit_pct < (streak_ret_pct - 3.25):
-            sarkhati_reasons.append(
-                f"سود فعلی کاربر ({user_profit_pct:+.2f}%) کمتر از سود کل روزهای صف خرید سهم (+{streak_ret_pct:.2f}%) است -> ورود در میانه صف با سرخطی"
-            )
-
         if has_strong_net_bq:
-            sarkhati_reasons.append(
+            classification_reasons.append(
                 f"قفل در صف خرید سقف روزانه ({best_buy_q:,} سهم @ {best_buy_p:,} ریال)"
             )
 
-        if isin in active_buy_orders_by_isin:
-            b_ord = active_buy_orders_by_isin[isin]
-            b_pl = buy_order_places_by_isin.get(isin, {})
-            b_rnk = b_pl.get("orderPlace")
-            b_vol_ahead = b_pl.get("volumeAhead")
-            rnk_str = f" | رتبه فعلی در صف: {int(b_rnk):,} (حجم پیش‌رو: {int(b_vol_ahead or 0):,} سهم)" if b_rnk is not None else ""
-            sarkhati_reasons.append(
-                f"سفارش خرید سرخطی فعال در صف امروز ({int(b_ord.get('quantity') or 0):,} سهم @ {int(b_ord.get('price') or 0):,} ریال | پرشده: {int(b_ord.get('executedQuantity') or 0):,} سهم{rnk_str})"
-            )
-
-        is_sarkhati_stock = len(sarkhati_reasons) > 0
-
         init_state_code = str(snap.get("stateCode") or snap.get("symbolState") or "A").strip().upper()
-        init_state_title, init_state_color, init_open_cont, init_open_pm = decode_symbol_state_code(init_state_code)
-        info.update(
-            {
-                "state_code": init_state_code,
-                "state_title_fa": init_state_title,
-                "state_color": init_state_color,
-                "is_open_continuous": init_open_cont,
-                "high_allowed_price_rials": high_allowed,
-                "low_allowed_price_rials": low_allowed,
-                "last_traded_price_rials": last_p,
-                "prev_close_price_rials": prev_close,
-                "best_buy_price_rials": best_buy_p,
-                "best_buy_quantity": best_buy_q,
-                "best_sell_price_rials": best_sell_p,
-                "best_sell_quantity": best_sell_q,
-                "sell_commission_rate": sell_comm,
-                "volume_30_avg": vol_30_avg,
-                "user_unrealized_profit_pct": round(user_profit_pct, 2),
-                "consecutive_buy_queue_days": consec_bq_days,
-                "streak_cumulative_return_pct": streak_ret_pct,
-                "recent_days_summary": hist["recent_days_summary"],
-                "is_sarkhati_stock": is_sarkhati_stock,
-                "sarkhati_detection_reason": " + ".join(sarkhati_reasons) if sarkhati_reasons else "سهم عادی پرتفوی",
-                "has_active_real_sell_order": isin in active_sell_orders_by_isin,
-                "active_buy_order": active_buy_orders_by_isin.get(isin),
-                "active_buy_order_place": buy_order_places_by_isin.get(isin),
-            }
-        )
+        init_state_title, init_state_color, init_open_cont, _ = decode_symbol_state_code(init_state_code)
+
+        return isin, {
+            "state_code": init_state_code,
+            "state_title_fa": init_state_title,
+            "state_color": init_state_color,
+            "is_open_continuous": init_open_cont,
+            "high_allowed_price_rials": high_allowed,
+            "low_allowed_price_rials": low_allowed,
+            "last_traded_price_rials": last_p,
+            "prev_close_price_rials": prev_close,
+            "best_buy_price_rials": best_buy_p,
+            "best_buy_quantity": best_buy_q,
+            "best_sell_price_rials": best_sell_p,
+            "best_sell_quantity": best_sell_q,
+            "sell_commission_rate": sell_comm,
+            "volume_30_avg": vol_30_avg,
+            "user_unrealized_profit_pct": round(user_profit_pct, 2),
+            "consecutive_buy_queue_days": consec_bq_days,
+            "streak_cumulative_return_pct": streak_ret_pct,
+            "recent_days_summary": hist["recent_days_summary"],
+            "is_prior_buy_queue_streak": is_prior_buy_queue_streak,
+            # حفظ کلید زیر صرفاً جهت سازگاری با ستون CSV و گزارش‌های قبلی:
+            "is_sarkhati_stock": is_prior_buy_queue_streak,
+            "sarkhati_detection_reason": (
+                " + ".join(classification_reasons)
+                if classification_reasons
+                else "سهم عادی پرتفوی (بدون صف خرید بدون ریزش در روز معاملاتی قبل)"
+            ),
+            "has_active_real_sell_order": isin in active_sell_orders_by_isin,
+        }
+
+    futs = [_SHARED_POLL_EXECUTOR.submit(_enrich_one_symbol, isin) for isin in portfolio_map.keys()]
+    for fut in concurrent.futures.as_completed(futs, timeout=25.0):
+        try:
+            isin_done, upd = fut.result()
+            portfolio_map[isin_done].update(upd)
+        except Exception:
+            pass
 
     return portfolio_map
 
 
 def print_startup_portfolio_report(portfolio_map):
+    streak_cnt = sum(1 for v in portfolio_map.values() if v.get("is_prior_buy_queue_streak"))
+    normal_cnt = len(portfolio_map) - streak_cnt
     print(
         f"\n{'='*92}\n"
-        f"=== گزارش شناسایی خودکار پرتفوی و تحلیل سابقه صف خرید روزهای اخیر (مجموع: {len(portfolio_map)} نماد) ===\n"
+        f"=== گزارش شناسایی خودکار پرتفوی بر مبنای «صف خرید واقعی بدون ریزش» (کل: {len(portfolio_map)} نماد | دارای صف روز قبل: {streak_cnt} | عادی: {normal_cnt}) ===\n"
         f"{'='*92}"
     )
     if not portfolio_map:
-        print("  [!] هیچ سهم فعالی (به جز صندوق‌های پارک نقدینگی مثل آوند) در پرتفوی یافت نشد.")
+        print(" [!] هیچ سهم فعالی (به جز صندوق‌های پارک نقدینگی مثل آوند) در پرتفوی یافت نشد.")
         print("=" * 92)
         return
 
-    for idx, (isin, info) in enumerate(portfolio_map.items(), start=1):
+    # مرتب‌سازی نمایشی: ابتدا سهام دارای بیشترین روزهای صف خرید بدون ریزش، سپس سهام عادی
+    ordered = sorted(
+        portfolio_map.items(),
+        key=lambda kv: (kv[1].get("consecutive_buy_queue_days", 0), kv[1].get("streak_cumulative_return_pct", 0.0)),
+        reverse=True,
+    )
+    for idx, (isin, info) in enumerate(ordered, start=1):
         mode_badge = (
-            "🔥 سهم سرخطی / صف خرید روزهای قبل (پایش فعال از 08:45:00 + لایه ۵ پشتیبان فعال)"
-            if info["is_sarkhati_stock"]
-            else "🛡️ سهم عادی پرتفوی (پایش به محض قفل شدن در صف خرید)"
+            f"🔥 صف خرید واقعی بدون ریزش ({info['consecutive_buy_queue_days']} روز متوالی — پایش از 08:45 + لایه ۵ فعال)"
+            if info.get("is_prior_buy_queue_streak")
+            else "🛡️ سهم عادی پرتفوی (پایش صرفاً در صورت قفل شدن در صف خرید امروز — بدون لایه ۵)"
         )
         print(
-            f"  [{idx}] نماد: {info['symbol_name']} ({isin}) | وضعیت نماد: {info.get('state_title_fa', 'مجاز')} (کد: {info.get('state_code', 'A')}) | تعداد دارایی: {info['quantity']:,} سهم\n"
-            f"      - قیمت سر‌به‌سر (با کارمزد): {int(info['breakeven_price_rials']):,} ریال | آخرین قیمت: {info['last_traded_price_rials']:,} ریال | سقف مجاز امروز: {info['high_allowed_price_rials']:,} ریال\n"
-            f"      - سود تحقق‌نیافته فعلی کاربر: {info['user_unrealized_profit_pct']:+.2f}% | روزهای متوالی صف خرید اخیر: {info['consecutive_buy_queue_days']} روز (رشد سلسله صف: +{info['streak_cumulative_return_pct']:.2f}%)\n"
-            f"      - کندل‌های روزهای اخیر: {info['recent_days_summary'] or 'نامشخص'}\n"
-            f"      - وضعیت فعلی تابلو: خرید {info['best_buy_quantity']:,} سهم @ {info['best_buy_price_rials']:,} ریال | فروش {info['best_sell_quantity']:,} سهم @ {info['best_sell_price_rials']:,} ریال\n"
-            f"      - طبقه‌بندی نگهبان: {mode_badge}\n"
-            f"      - دلیل تشخیص: {info['sarkhati_detection_reason']}"
+            f" [{idx}] نماد: {info['symbol_name']} ({isin}) | وضعیت نماد: {info.get('state_title_fa', 'مجاز')} (کد: {info.get('state_code', 'A')}) | تعداد دارایی: {info['quantity']:,} سهم\n"
+            f"     - قیمت سر‌به‌سر (با کارمزد): {int(info['breakeven_price_rials']):,} ریال | آخرین قیمت: {info['last_traded_price_rials']:,} ریال | سقف مجاز امروز: {info['high_allowed_price_rials']:,} ریال\n"
+            f"     - سود تحقق‌نیافته کاربر: {info['user_unrealized_profit_pct']:+.2f}% | روزهای متوالی صف خرید بدون ریزش: {info['consecutive_buy_queue_days']} روز (رشد سلسله صف: +{info['streak_cumulative_return_pct']:.2f}%)\n"
+            f"     - کندل‌های روزهای اخیر: {info['recent_days_summary'] or 'نامشخص'}\n"
+            f"     - وضعیت فعلی تابلو: خرید {info['best_buy_quantity']:,} سهم @ {info['best_buy_price_rials']:,} ریال | فروش {info['best_sell_quantity']:,} سهم @ {info['best_sell_price_rials']:,} ریال\n"
+            f"     - طبقه‌بندی نگهبان: {mode_badge}\n"
+            f"     - توضیح: {info['sarkhati_detection_reason']}"
         )
-        if idx < len(portfolio_map):
-            print("  " + "-" * 88)
+        if idx < len(ordered):
+            print(" " + "-" * 88)
     print("=" * 92)
 
+
 # ==============================================================================
-# ۶. موتور رهگیری لحظه‌ای صف خرید، تشخیص حذف سفارش پرشتاب و ماتریس ۵ لایه‌ای
+# ۶. موتور رهگیری موازی و لحظه‌ای صف خرید و ماتریس ۵ لایه‌ای
 # ==============================================================================
 class BuyQueueShieldTracker:
     """
-    رهگیری لحظه‌ای (نیم‌ثانیه‌ای) وضعیت صف خرید، معاملات واقعی، سرعت و شتاب حذف سفارش‌ها
-    و اجرای ماتریس ۵ لایه‌ای تصمیم‌گیری در حالت صوری (Paper Trading) برای هر سهم موجود در پرتفوی
+    رهگیری نیم‌ثانیه‌ای وضعیت صف خرید، معاملات واقعی، سرعت و شتاب حذف سفارش‌ها
+    و اجرای ماتریس ۵ لایه‌ای در حالت ۱۰۰٪ صوری روی کل پرتفوی بدون تداخل بین سهام صف‌دار و عادی.
     """
 
     def __init__(self, portfolio_map, sim_state):
@@ -1602,15 +1595,19 @@ class BuyQueueShieldTracker:
         self.sim_state = sim_state
         self.trackers = {}
         self.last_deep_telemetry_ts = {}
+        self.last_normal_sheet_ts = {}
 
         for isin, info in portfolio_map.items():
+            is_prior_streak = bool(info.get("is_prior_buy_queue_streak", False))
             self.trackers[isin] = {
                 "isin": isin,
                 "name": info["symbol_name"],
                 "user_qty": int(info["quantity"]),
                 "breakeven_price": float(info["breakeven_price_rials"]),
                 "sell_comm_rate": float(info["sell_commission_rate"]),
-                "is_sarkhati_stock": bool(info["is_sarkhati_stock"]),
+                "is_prior_buy_queue_streak": is_prior_streak,
+                # حفظ کلید هم‌نام برای سازگاری خروجی CSV (هرگز در طول روز برای سهم عادی به True تغییر نمی‌کند!)
+                "is_sarkhati_stock": is_prior_streak,
                 "sarkhati_reason": str(info["sarkhati_detection_reason"]),
                 "consec_bq_days": int(info["consecutive_buy_queue_days"]),
                 "streak_ret_pct": float(info["streak_cumulative_return_pct"]),
@@ -1637,69 +1634,159 @@ class BuyQueueShieldTracker:
                 "ind_sell_num": 0,
             }
 
-    def update_deep_telemetry_if_due(self, session, headers, isin):
-        now_ts = time.time()
-        if now_ts - self.last_deep_telemetry_ts.get(isin, 0.0) < DEEP_TELEMETRY_INTERVAL_SEC:
-            return
-        self.last_deep_telemetry_ts[isin] = now_ts
-        tr = self.trackers.get(isin)
-        if not tr:
-            return
+    def select_isins_for_live_sheet(self, items_by_isin, now_ts):
+        """
+        انتخاب هوشمند نمادهایی که به استعلام لحظه‌ای MarketSheet/all نیاز دارند:
+        - همه سهام دارای سابقه صف خرید بدون ریزش، سهام قفل‌شده در صف امروز، سیگنال‌های خارج‌شده امروز
+          و هر سهمی که قیمت خرید یا آخرین معامله‌اش به ۱٪ سقف روزانه نزدیک شده باشد (هر ۰.۵ ثانیه).
+        - سهام کاملاً عادی و دور از سقف فقط هر ۵ ثانیه یک‌بار (جهت حفظ سرعت ۰.۵ ثانیه‌ای روی ۲۰+ نماد).
+        """
+        exited_map = self.sim_state.get("today_signals_by_isin") or {}
+        urgent_isins = []
+        for isin, tr in self.trackers.items():
+            if tr.get("is_halted_or_closed") and isin not in items_by_isin:
+                continue
+            item = items_by_isin.get(isin) or {}
+            high_p = int(item.get("highAllowedPrice") or self.portfolio_map[isin].get("high_allowed_price_rials") or 0)
+            best_buy_p = int(item.get("bestBuyPrice") or item.get("topBuyPrice") or 0)
+            last_p = int(item.get("lastTradedPrice") or 0)
+            near_ceiling = high_p > 0 and (best_buy_p >= int(high_p * 0.99) or last_p >= int(high_p * 0.99))
 
+            if (
+                tr["is_prior_buy_queue_streak"]
+                or tr["seen_buy_queue_today"]
+                or (isin in exited_map)
+                or near_ceiling
+            ):
+                urgent_isins.append(isin)
+            else:
+                if (now_ts - self.last_normal_sheet_ts.get(isin, 0.0)) >= NORMAL_STOCK_SHEET_REFRESH_SEC:
+                    self.last_normal_sheet_ts[isin] = now_ts
+                    urgent_isins.append(isin)
+        return urgent_isins
+
+    def overlay_live_sheets_parallel(self, headers, items_by_isin, target_isins):
+        """دریافت موازی و بدون تکرار MarketSheet/all برای نمادهای منتخب (بدون فریز حلقه ۰.۵ ثانیه‌ای)"""
+        if not target_isins:
+            return
+        get_h = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+
+        def _fetch_sheet(isin_k):
+            try:
+                r = _get_thread_local_session().get(
+                    MARKET_SHEET_ALL_URL_TPL.format(isin=isin_k),
+                    headers=get_h,
+                    timeout=0.9,
+                )
+                if r.status_code == 200 and r.text:
+                    return isin_k, (r.json() or {})
+            except Exception:
+                pass
+            return isin_k, None
+
+        futs = [_SHARED_POLL_EXECUTOR.submit(_fetch_sheet, isin_k) for isin_k in target_isins]
         try:
-            updated_from_3s_api = False
-            r_iit = session.post(
-                IND_INST_TRADE_POST_URL,
-                data=json.dumps({"isin": isin}).encode("utf-8"),
-                headers=headers,
-                timeout=1.2,
-            )
-            if r_iit.status_code == 200 and r_iit.text:
-                dt_ii = r_iit.json() or {}
-                if isinstance(dt_ii, dict):
-                    ib_v = int(dt_ii.get("indBuyVolume") or 0)
-                    ib_n = int(dt_ii.get("indBuyNumber") or 0)
-                    is_v = int(dt_ii.get("indSellVolume") or 0)
-                    is_n = int(dt_ii.get("indSellNumber") or 0)
-                    ins_s_v = int(dt_ii.get("insSellVolume") or 0)
-                    if ib_v > 0 and ib_n > 0 and is_v > 0 and is_n > 0:
-                        tr["ind_buy_power"] = round((ib_v / float(ib_n)) / (is_v / float(is_n)), 2)
-                    tr["ins_sell_vol"] = ins_s_v
-                    tr["ind_buy_vol"] = ib_v
-                    tr["ind_buy_num"] = ib_n
-                    tr["ind_sell_vol"] = is_v
-                    tr["ind_sell_num"] = is_n
-                    updated_from_3s_api = True
-            if not updated_from_3s_api:
-                get_headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
-                r_ii = session.get(IND_INST_ORBIS_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.4)
-                if r_ii.status_code != 200 or not r_ii.text:
-                    r_ii = session.get(BV_STOCK_IND_INST_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.4)
-                if r_ii.status_code == 200 and r_ii.text:
-                    d = r_ii.json() or {}
-                    if isinstance(d, list) and d:
-                        d = d[0]
-                    if isinstance(d, dict):
-                        buy_per = float(d.get("buyPerInd") or 0.0)
-                        sell_per = float(d.get("sellPerInd") or 0.0)
-                        raw_pow = float(d.get("indBuyPow") or 1.0)
-                        if sell_per > 0 and buy_per > 0:
-                            tr["ind_buy_power"] = round(buy_per / sell_per, 2)
-                        else:
-                            tr["ind_buy_power"] = round(raw_pow if raw_pow < 50.0 else (raw_pow / 100.0), 2)
-                        tr["ins_sell_vol"] = int(d.get("insSellVol") or 0)
-                        tr["bid_pressure"] = float(d.get("bidPres") or 0.0)
+            for fut in concurrent.futures.as_completed(futs, timeout=1.2):
+                try:
+                    isin_k, ms_live = fut.result()
+                    if not isinstance(ms_live, dict) or isin_k not in items_by_isin:
+                        continue
+                    item = items_by_isin[isin_k]
+                    b_sh = [x for x in (ms_live.get("buySheets") or []) if isinstance(x, dict) and int(x.get("volume") or 0) > 0]
+                    s_sh = [x for x in (ms_live.get("sellSheets") or []) if isinstance(x, dict) and int(x.get("volume") or 0) > 0]
+                    if b_sh:
+                        b_sh.sort(key=lambda x: int(x.get("price") or 0), reverse=True)
+                        item["bestBuyPrice"] = int(b_sh[0].get("price") or 0)
+                        item["bestBuyQuantity"] = int(b_sh[0].get("volume") or 0)
+                        if isin_k in self.trackers:
+                            self.trackers[isin_k]["market_maker_vol_logged"] = int(b_sh[0].get("marketMaker") or 0)
+                    else:
+                        item["bestBuyPrice"] = 0
+                        item["bestBuyQuantity"] = 0
+                    if s_sh:
+                        s_sh.sort(key=lambda x: int(x.get("price") or 0))
+                        item["bestSellPrice"] = int(s_sh[0].get("price") or 0)
+                        item["bestSellQuantity"] = int(s_sh[0].get("volume") or 0)
+                    else:
+                        item["bestSellPrice"] = 0
+                        item["bestSellQuantity"] = 0
+                except Exception:
+                    pass
         except Exception:
             pass
 
+    def update_deep_telemetry_batch_parallel(self, headers, active_isins):
+        """
+        استعلام موازی حقیقی/حقوقی صرفاً برای نمادهای فعالِ در نوبت ۲ ثانیه‌ای
+        (فراخوانی تکراری MarketSheet/all که در نسخه ۲.۱ باعث کندی شدید می‌شد کاملاً حذف شد).
+        """
+        now_ts = time.time()
+        due_isins = [
+            isin for isin in active_isins
+            if isin in self.trackers
+            and not self.trackers[isin].get("is_halted_or_closed")
+            and (now_ts - self.last_deep_telemetry_ts.get(isin, 0.0)) >= DEEP_TELEMETRY_INTERVAL_SEC
+        ]
+        if not due_isins:
+            return
+        for isin in due_isins:
+            self.last_deep_telemetry_ts[isin] = now_ts
+
+        get_headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+
+        def _fetch_ii(isin):
+            tr = self.trackers.get(isin)
+            if not tr:
+                return
+            t_sess = _get_thread_local_session()
+            try:
+                updated_from_3s = False
+                r_iit = t_sess.post(
+                    IND_INST_TRADE_POST_URL,
+                    data=json.dumps({"isin": isin}).encode("utf-8"),
+                    headers=headers,
+                    timeout=1.0,
+                )
+                if r_iit.status_code == 200 and r_iit.text:
+                    dt_ii = r_iit.json() or {}
+                    if isinstance(dt_ii, dict):
+                        ib_v = int(dt_ii.get("indBuyVolume") or 0)
+                        ib_n = int(dt_ii.get("indBuyNumber") or 0)
+                        is_v = int(dt_ii.get("indSellVolume") or 0)
+                        is_n = int(dt_ii.get("indSellNumber") or 0)
+                        ins_s_v = int(dt_ii.get("insSellVolume") or 0)
+                        if ib_v > 0 and ib_n > 0 and is_v > 0 and is_n > 0:
+                            tr["ind_buy_power"] = round((ib_v / float(ib_n)) / (is_v / float(is_n)), 2)
+                        tr["ins_sell_vol"] = ins_s_v
+                        tr["ind_buy_vol"] = ib_v
+                        tr["ind_buy_num"] = ib_n
+                        tr["ind_sell_vol"] = is_v
+                        tr["ind_sell_num"] = is_n
+                        updated_from_3s = True
+                if not updated_from_3s:
+                    r_ii = t_sess.get(IND_INST_ORBIS_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.1)
+                    if r_ii.status_code != 200 or not r_ii.text:
+                        r_ii = t_sess.get(BV_STOCK_IND_INST_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.1)
+                    if r_ii.status_code == 200 and r_ii.text:
+                        d = r_ii.json() or {}
+                        if isinstance(d, list) and d:
+                            d = d[0]
+                        if isinstance(d, dict):
+                            buy_per = float(d.get("buyPerInd") or 0.0)
+                            sell_per = float(d.get("sellPerInd") or 0.0)
+                            raw_pow = float(d.get("indBuyPow") or 1.0)
+                            if sell_per > 0 and buy_per > 0:
+                                tr["ind_buy_power"] = round(buy_per / sell_per, 2)
+                            else:
+                                tr["ind_buy_power"] = round(raw_pow if raw_pow < 50.0 else (raw_pow / 100.0), 2)
+                            tr["ins_sell_vol"] = int(d.get("insSellVol") or 0)
+                            tr["bid_pressure"] = float(d.get("bidPres") or 0.0)
+            except Exception:
+                pass
+
+        futs = [_SHARED_POLL_EXECUTOR.submit(_fetch_ii, isin) for isin in due_isins]
         try:
-            get_headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
-            r_ms = session.get(MARKET_SHEET_ALL_URL_TPL.format(isin=isin), headers=get_headers, timeout=1.8)
-            if r_ms.status_code == 200 and r_ms.text:
-                ms = r_ms.json() or {}
-                buy_sheets = ms.get("buySheets") or []
-                if buy_sheets and isinstance(buy_sheets[0], dict):
-                    tr["market_maker_vol_logged"] = int(buy_sheets[0].get("marketMaker") or 0)
+            concurrent.futures.wait(futs, timeout=1.3)
         except Exception:
             pass
 
@@ -1730,7 +1817,7 @@ class BuyQueueShieldTracker:
             or self.portfolio_map[isin].get("state_code")
             or "A"
         ).strip().upper()
-        state_title_fa, state_color, is_open_cont, is_open_pm = decode_symbol_state_code(raw_state_code)
+        state_title_fa, _, is_open_cont, is_open_pm = decode_symbol_state_code(raw_state_code)
         tr["state_code"] = raw_state_code
         tr["state_title_fa"] = state_title_fa
 
@@ -1767,7 +1854,7 @@ class BuyQueueShieldTracker:
                 tr["halt_reason"] = f"وضعیت نماد بسته/متوقف است ({state_title_fa} — stateCode={raw_state_code})"
             else:
                 tr["halt_reason"] = (
-                    "توقف آنی نماد توسط ناظر بازار (تخلیه کامل مظنه‌های خرید و فروش 0@0 بدون معامله — مثلاً رشد بیش از ۵۰٪ / کنفرانس اطلاعاتی)"
+                    "توقف آنی نماد توسط ناظر بازار (تخلیه کامل مظنه‌های خرید و فروش 0@0 بدون معامله)"
                 )
             if not tr.get("halt_logged_flag") and (is_in_premarket_window or is_in_continuous_window):
                 print(
@@ -1829,13 +1916,13 @@ class BuyQueueShieldTracker:
             self._update_post_exit_monitoring(isin, exited_signals[isin], sample, is_locked_buy_queue, tr, now_ts, now_ms_str)
             return None
 
-        # بخش الف: پایش ویژه پیش‌گشایش (08:45:00 تا 08:59:59)
+        # بخش الف: پایش ویژه پیش‌گشایش (08:45:00 تا 08:59:59) — صرفاً برای سهام دارای صف خرید بدون ریزش از روز قبل
         if PREMARKET_START_TIME_STR <= now_str < CONTINUOUS_START_TIME_STR:
             if is_locked_buy_queue and net_ceiling_buy_q > tr["premarket_peak_queue_vol"]:
                 tr["premarket_peak_queue_vol"] = net_ceiling_buy_q
                 tr["premarket_peak_time"] = now_ms_str
 
-            if not tr["is_sarkhati_stock"]:
+            if not tr["is_prior_buy_queue_streak"]:
                 return None
 
             if now_str >= PREMARKET_SETTLE_TIME_STR:
@@ -1844,7 +1931,7 @@ class BuyQueueShieldTracker:
                 if not is_locked_buy_queue or best_buy_p < high_p:
                     if tr["queue_lost_since_ts"] is None:
                         tr["queue_lost_since_ts"] = now_ts
-                    elif (now_ts - tr["queue_lost_since_ts"]) >= LAYER5_SARKHATI_FAILSAFE_CONFIRM_SEC:
+                    elif (now_ts - tr["queue_lost_since_ts"]) >= LAYER5_STREAK_FAILSAFE_CONFIRM_SEC:
                         target_order_p = best_buy_p if (best_buy_p > 0 and best_buy_p < high_p) else high_p
                         return self._trigger_simulated_exit(
                             isin=isin,
@@ -1860,9 +1947,9 @@ class BuyQueueShieldTracker:
                             cancel_10s_pct=100.0,
                             cancel_vel_pct=0.0,
                             reason_fa=(
-                                f"ریزش/عدم تشکیل صف خرید در پیش‌گشایش (ساعت {now_ms_str}) روی سهم سرخطی "
+                                f"ریزش/عدم تشکیل صف خرید در پیش‌گشایش (ساعت {now_ms_str}) روی سهم دارای {tr['consec_bq_days']} روز صف خرید بدون ریزش "
                                 f"(خرید سقف: {best_buy_q:,} در برابر فروش: {competing_sell_q:,})؛ "
-                                f"فروش صوری فوری در پیش‌گشایش ({target_order_p:,} ریال) برای جلوگیری از سوختن سود در بازگشایی ۰۹:۰۰"
+                                f"فروش صوری فوری در پیش‌گشایش ({target_order_p:,} ریال)"
                             ),
                         )
                 else:
@@ -1905,7 +1992,8 @@ class BuyQueueShieldTracker:
         eff_ceil_q = sample["buy_q"] if is_locked_buy_queue else 0
         if is_locked_buy_queue:
             tr["seen_buy_queue_today"] = True
-            tr["is_sarkhati_stock"] = True
+            # نکته مهم نسخه ۲.۲: سهم عادی که امروز صف خرید شد، برچسب is_prior_buy_queue_streak نمی‌گیرد
+            # تا مهلت بازگشت ۴ ثانیه‌ای سهام عادی (NON_STREAK_POST_BREAK_GRACE_SEC) به‌درستی حفظ شود!
             tr["queue_lost_since_ts"] = None
             if eff_ceil_q > tr["peak_buy_queue_vol"]:
                 tr["peak_buy_queue_vol"] = eff_ceil_q
@@ -2034,19 +2122,19 @@ class BuyQueueShieldTracker:
                     ),
                 )
 
-        # بررسی لایه ۵ (حالت پشتیبان قطعی سهام سرخطی در هر نقطه‌ای که صف خرید ندید) و لایه خروج سهام عادی
+        # بررسی لایه ۵ (صرفاً برای سهام دارای صف خرید بدون ریزش روزهای قبل) و خروج تاییدی سهام عادیِ صف‌شده در امروز
         if not is_locked_buy_queue and now_str >= CONTINUOUS_SAFE_GRACE_TIME_STR:
             if tr["queue_lost_since_ts"] is None:
                 tr["queue_lost_since_ts"] = now_ts
             lost_elapsed = now_ts - tr["queue_lost_since_ts"]
 
-            if tr["is_sarkhati_stock"] and lost_elapsed >= LAYER5_SARKHATI_FAILSAFE_CONFIRM_SEC:
+            if tr["is_prior_buy_queue_streak"] and lost_elapsed >= LAYER5_STREAK_FAILSAFE_CONFIRM_SEC:
                 exit_order_p = best_buy_p if best_buy_p > 0 else (last_p if last_p > 0 else high_p)
                 return self._trigger_simulated_exit(
                     isin=isin,
                     tr=tr,
                     sample=sample,
-                    trigger_layer="LAYER5_SARKHATI_NO_QUEUE_FAILSAFE",
+                    trigger_layer="LAYER5_STREAK_NO_QUEUE_FAILSAFE",
                     signal_phase="CONTINUOUS_POST_QUEUE_FAILSAFE",
                     order_price=exit_order_p,
                     drop_pct=100.0,
@@ -2056,12 +2144,12 @@ class BuyQueueShieldTracker:
                     cancel_10s_pct=cancel_drop_10s_pct,
                     cancel_vel_pct=cancel_vel_recent_pct_s,
                     reason_fa=(
-                        f"حالت پشتیبان قطعی سهام سرخطی (لایه ۵): سهم سرخطی فاقد صف خرید است "
-                        f"(بهترین خرید تابلو: {best_buy_p:,} ریال | فروشنده: {best_sell_q:,} @ {best_sell_p:,}) -> فروش صوری فوری در {exit_order_p:,} ریال برای حفظ کامل سود"
+                        f"حالت پشتیبان قطعی صف خرید روزهای قبل (لایه ۵ — {tr['consec_bq_days']} روز صف بدون ریزش): سهم فاقد صف خرید است "
+                        f"(بهترین خرید تابلو: {best_buy_p:,} ریال | فروشنده: {best_sell_q:,} @ {best_sell_p:,}) -> فروش صوری فوری در {exit_order_p:,} ریال"
                     ),
                 )
 
-            if (not tr["is_sarkhati_stock"]) and tr["seen_buy_queue_today"] and lost_elapsed >= NON_SARKHATI_POST_BREAK_GRACE_SEC:
+            if (not tr["is_prior_buy_queue_streak"]) and tr["seen_buy_queue_today"] and lost_elapsed >= NON_STREAK_POST_BREAK_GRACE_SEC:
                 exit_order_p = best_buy_p if best_buy_p > 0 else (last_p if last_p > 0 else high_p)
                 return self._trigger_simulated_exit(
                     isin=isin,
@@ -2077,7 +2165,7 @@ class BuyQueueShieldTracker:
                     cancel_10s_pct=cancel_drop_10s_pct,
                     cancel_vel_pct=cancel_vel_recent_pct_s,
                     reason_fa=(
-                        f"باز شدن کامل صف خرید سهم عادی و عدم بازگشت پس از {NON_SARKHATI_POST_BREAK_GRACE_SEC:.0f} ثانیه -> "
+                        f"باز شدن کامل صف خرید سهم عادی و عدم بازگشت پس از {NON_STREAK_POST_BREAK_GRACE_SEC:.0f} ثانیه -> "
                         f"فروش صوری در بهترین تقاضای تابلو ({exit_order_p:,} ریال)"
                     ),
                 )
@@ -2129,7 +2217,7 @@ class BuyQueueShieldTracker:
             "date": today_str,
             "symbol_name": tr["name"],
             "symbol_isin": isin,
-            "is_sarkhati_stock": tr["is_sarkhati_stock"],
+            "is_sarkhati_stock": tr["is_prior_buy_queue_streak"],
             "sarkhati_detection_reason": tr["sarkhati_reason"],
             "consecutive_buy_queue_days": tr["consec_bq_days"],
             "streak_cumulative_return_pct": tr["streak_ret_pct"],
@@ -2255,16 +2343,16 @@ class BuyQueueShieldTracker:
             if curr_mark_p > int(sig_rec.get("max_price_after_exit") or curr_mark_p):
                 sig_rec["max_price_after_exit"] = curr_mark_p
             sig_rec["last_price_1230"] = curr_mark_p
-            if sample["close_p"] > 0:
-                sig_rec["close_price_1230"] = sample["close_p"]
+        if sample["close_p"] > 0:
+            sig_rec["close_price_1230"] = sample["close_p"]
 
-            ver_exit_p = int(sig_rec.get("verified_exit_price_rials") or sig_rec["order_price_rials"])
-            user_qty = int(sig_rec["user_quantity"])
-            saved_rials = int(round((ver_exit_p - curr_mark_p) * user_qty * (1.0 - tr["sell_comm_rate"])))
-            saved_pct = ((ver_exit_p - curr_mark_p) / float(ver_exit_p)) * 100.0 if ver_exit_p > 0 else 0.0
-            sig_rec["saved_profit_vs_1230_rials"] = saved_rials
-            sig_rec["saved_profit_vs_1230_tomans"] = round(saved_rials / 10.0)
-            sig_rec["saved_profit_vs_1230_pct"] = round(saved_pct, 2)
+        ver_exit_p = int(sig_rec.get("verified_exit_price_rials") or sig_rec["order_price_rials"])
+        user_qty = int(sig_rec["user_quantity"])
+        saved_rials = int(round((ver_exit_p - curr_mark_p) * user_qty * (1.0 - tr["sell_comm_rate"])))
+        saved_pct = ((ver_exit_p - curr_mark_p) / float(ver_exit_p)) * 100.0 if ver_exit_p > 0 else 0.0
+        sig_rec["saved_profit_vs_1230_rials"] = saved_rials
+        sig_rec["saved_profit_vs_1230_tomans"] = round(saved_rials / 10.0)
+        sig_rec["saved_profit_vs_1230_pct"] = round(saved_pct, 2)
 
         if not sig_rec.get("re_locked_buy_queue") and elapsed_since_sig >= 15.0:
             prev_peak = max(1, int(sig_rec.get("peak_buy_queue_vol") or 1))
@@ -2313,6 +2401,7 @@ def load_guardian_state():
     today_str = get_tehran_now().strftime("%Y-%m-%d")
     default_state = {
         "last_run_date": today_str,
+        "account_username": MOFID_USERNAME,
         "today_signals_by_isin": {},
         "historical_signals": [],
     }
@@ -2333,7 +2422,7 @@ def load_guardian_state():
                             and int(s_obj.get("remaining_queue_at_signal") or 0) > 1000000
                         )
                         or (
-                            s_obj.get("trigger_layer") == "LAYER5_SARKHATI_NO_QUEUE_FAILSAFE"
+                            s_obj.get("trigger_layer") in ("LAYER5_SARKHATI_NO_QUEUE_FAILSAFE", "LAYER5_STREAK_NO_QUEUE_FAILSAFE")
                             and "بهترین خرید تابلو: 0 ریال | فروشنده: 0 @ 0" in str(s_obj.get("notes") or "")
                         )
                     ):
@@ -2346,6 +2435,7 @@ def load_guardian_state():
                     data["historical_signals"] = hist[-200:]
                     data["today_signals_by_isin"] = {}
                     data["last_run_date"] = today_str
+                data["account_username"] = MOFID_USERNAME
                 return data
         except Exception:
             pass
@@ -2408,7 +2498,12 @@ def print_periodic_and_final_summary(shield_tracker, sim_state, title_prefix="گ
         f"=== {title_prefix} سپر اول نگهبان پرتفوی ({now_ir} IRST) | سیگنال‌های فروش صوری امروز: {len(exited_map)} ===\n"
         f"{'='*92}"
     )
-    for isin, tr in shield_tracker.trackers.items():
+    ordered_tr = sorted(
+        shield_tracker.trackers.items(),
+        key=lambda kv: (kv[0] in exited_map, kv[1]["consec_bq_days"], kv[1]["peak_buy_queue_vol"]),
+        reverse=True,
+    )
+    for isin, tr in ordered_tr:
         hist = tr["history_samples"]
         last_s = hist[-1] if hist else {}
         curr_q = int(last_s.get("buy_q") or 0)
@@ -2419,10 +2514,10 @@ def print_periodic_and_final_summary(shield_tracker, sim_state, title_prefix="گ
             sig = exited_map[isin]
             upsert_signal_to_csv(sig)
             print(
-                f"  [فروخته‌شده در حالت صوری] {tr['name']} ({isin}) | لایه شلیک: {sig['trigger_layer']} در ساعت {sig['signal_time']}\n"
-                f"      - قیمت فروش تأییدشده: {sig['verified_exit_price_rials']:,} ریال ({sig['fill_verification_status']}) | سود خالص قفل‌شده: {sig['net_realized_profit_tomans']:+,} تومان ({sig['net_realized_profit_pct']:+.2f}%)\n"
-                f"      - قیمت فعلی/پایان بازار: {sig['last_price_1230']:,} ریال (کف پس از فروش: {sig['min_price_after_exit']:,}) | سود محافظت‌شده از ریزش: {sig['saved_profit_vs_1230_tomans']:+,} تومان ({sig['saved_profit_vs_1230_pct']:+.2f}%)\n"
-                f"      - وضعیت قفل مجدد صف خرید پس از فروش: {'بله (در ساعت ' + sig['re_lock_time'] + ')' if sig['re_locked_buy_queue'] else 'خیر (خروج موفق در قله)'}"
+                f" [فروخته‌شده در حالت صوری] {tr['name']} ({isin}) | لایه شلیک: {sig['trigger_layer']} در ساعت {sig['signal_time']}\n"
+                f"     - قیمت فروش تأییدشده: {sig['verified_exit_price_rials']:,} ریال ({sig['fill_verification_status']}) | سود خالص قفل‌شده: {sig['net_realized_profit_tomans']:+,} تومان ({sig['net_realized_profit_pct']:+.2f}%)\n"
+                f"     - قیمت فعلی/پایان بازار: {sig['last_price_1230']:,} ریال (کف پس از فروش: {sig['min_price_after_exit']:,}) | سود محافظت‌شده از ریزش: {sig['saved_profit_vs_1230_tomans']:+,} تومان ({sig['saved_profit_vs_1230_pct']:+.2f}%)\n"
+                f"     - وضعیت قفل مجدد صف خرید پس از فروش: {'بله (در ساعت ' + sig['re_lock_time'] + ')' if sig['re_locked_buy_queue'] else 'خیر (خروج موفق در قله)'}"
             )
         else:
             if tr.get("is_halted_or_closed"):
@@ -2431,9 +2526,10 @@ def print_periodic_and_final_summary(shield_tracker, sim_state, title_prefix="گ
                 status_tag = "قفل در صف خرید امن (SAFE_LOCKED)"
             else:
                 status_tag = "بدون صف خرید"
+            kind_lbl = f"صف خرید بدون ریزش ({tr['consec_bq_days']} روز)" if tr["is_prior_buy_queue_streak"] else "عادی"
             print(
-                f"  [در حال نگه‌داری و رصد] {tr['name']} ({isin}) | نوع: {'سرخطی/صف روز قبل' if tr['is_sarkhati_stock'] else 'عادی'} | وضعیت: {status_tag}\n"
-                f"      - صف خرید فعلی: {curr_q:,} سهم | اوج صف امروز: {peak_q:,} سهم (افت از اوج: {drop_pct:.1f}%) | حذف‌های صوری نادیده‌گرفته‌شده: {tr['fake_cancel_ignored_count']} مورد"
+                f" [در حال نگه‌داری و رصد] {tr['name']} ({isin}) | نوع: {kind_lbl} | وضعیت: {status_tag}\n"
+                f"     - صف خرید فعلی: {curr_q:,} سهم | اوج صف امروز: {peak_q:,} سهم (افت از اوج: {drop_pct:.1f}%) | حذف‌های صوری نادیده‌گرفته‌شده: {tr['fake_cancel_ignored_count']} مورد"
             )
     print("=" * 92)
 
@@ -2467,8 +2563,8 @@ def main():
             return
 
         print(
-            f"[+] سپر اول نگهبان پرتفوی (نسخه ۲.۱ — حالت ۱۰۰٪ صوری/تست بدون ارسال سفارش واقعی | "
-            f"لاگ روزانه: {GDRIVE_LOGS_SUBFOLDER_NAME}/{GUARDIAN_LOG_FILENAME} | سینک ایمن غیرمسدودکننده)"
+            f"[+] سپر اول نگهبان پرتفوی (نسخه ۲.۲ — کاملاً مستقل از سرخطی + ملاک صف خرید بدون ریزش + پایش موازی ۲۰+ نماد | "
+            f"لاگ روزانه: {GDRIVE_LOGS_SUBFOLDER_NAME}/{GUARDIAN_LOG_FILENAME} | حالت ۱۰۰٪ صوری)"
         )
         tok_ok, tok_msg = ensure_valid_token()
         print(f"[{'+' if tok_ok else '!'}] وضعیت توکن احراز هویت کارگزاری مفید: {tok_msg}")
@@ -2493,14 +2589,21 @@ def main():
         shield_tracker = BuyQueueShieldTracker(portfolio_map, sim_state)
         isins_list = list(portfolio_map.keys())
 
+        # نمونه اولیه موازی
         try:
             r_init = session.post(MARKET_DATA_V2_URL, data=json.dumps(isins_list).encode("utf-8"), headers=headers, timeout=4.0)
             if r_init.status_code == 200 and r_init.text:
-                for item in (r_init.json() or []):
-                    if isinstance(item, dict) and item.get("symbolIsin"):
-                        isin_k = str(item["symbolIsin"])
-                        shield_tracker.update_deep_telemetry_if_due(session, headers, isin_k)
-                        shield_tracker.process_snapshot_and_evaluate(isin_k, item, get_tehran_now())
+                init_items = {
+                    str(it["symbolIsin"]): it
+                    for it in (r_init.json() or [])
+                    if isinstance(it, dict) and it.get("symbolIsin") in shield_tracker.trackers
+                }
+                init_urgent = shield_tracker.select_isins_for_live_sheet(init_items, time.time())
+                shield_tracker.overlay_live_sheets_parallel(headers, init_items, init_urgent)
+                shield_tracker.update_deep_telemetry_batch_parallel(headers, init_urgent)
+                now_eval = get_tehran_now()
+                for isin_k, item in init_items.items():
+                    shield_tracker.process_snapshot_and_evaluate(isin_k, item, now_eval)
         except Exception:
             pass
 
@@ -2515,10 +2618,10 @@ def main():
             return
 
         print(
-            f"\n[*] حلقه پایش زنده «سپر اول نگهبان پرتفوی» (حالت صوری) فعال شد:\n"
-            f"    - بازه پیش‌گشایش سهام سرخطی: {PREMARKET_START_TIME_STR} تا {CONTINUOUS_START_TIME_STR}\n"
+            f"\n[*] حلقه پایش زنده و موازی «سپر اول نگهبان پرتفوی» (حالت صوری) فعال شد:\n"
+            f"    - بازه پیش‌گشایش سهام دارای صف خرید روز قبل: {PREMARKET_START_TIME_STR} تا {CONTINUOUS_START_TIME_STR}\n"
             f"    - بازه بازار پیوسته (ماتریس ۵ لایه‌ای): {CONTINUOUS_START_TIME_STR} تا {MARKET_CLOSE_TIME_STR}\n"
-            f"    - فرکانس نمونه‌برداری: هر {PORTFOLIO_POLL_INTERVAL_SEC} ثانیه روی {len(isins_list)} نماد پرتفوی..."
+            f"    - گام نمونه‌برداری دقیق: هر {PORTFOLIO_POLL_INTERVAL_SEC} ثانیه با {PARALLEL_POLL_MAX_WORKERS} ترد موازی روی {len(isins_list)} نماد پرتفوی..."
         )
 
         last_status_ts = time.time()
@@ -2526,6 +2629,7 @@ def main():
         last_token_check_ts = time.time()
 
         while True:
+            loop_t0 = time.time()
             now_ir = get_tehran_now()
             now_str = now_ir.strftime("%H:%M:%S")
 
@@ -2557,37 +2661,18 @@ def main():
                 if r_md.status_code == 200 and r_md.text:
                     items = r_md.json() or []
                     if isinstance(items, list):
-                        get_h = {k: v for k, v in headers.items() if k.lower() != "content-type"}
-                        for item in items:
-                            if not isinstance(item, dict):
-                                continue
-                            isin_k = str(item.get("symbolIsin") or "")
-                            if isin_k in shield_tracker.trackers:
-                                try:
-                                    r_ms_live = session.get(MARKET_SHEET_ALL_URL_TPL.format(isin=isin_k), headers=get_h, timeout=0.9)
-                                    if r_ms_live.status_code == 200 and r_ms_live.text:
-                                        ms_live = r_ms_live.json() or {}
-                                        b_sh = [x for x in (ms_live.get("buySheets") or []) if isinstance(x, dict) and int(x.get("volume") or 0) > 0]
-                                        s_sh = [x for x in (ms_live.get("sellSheets") or []) if isinstance(x, dict) and int(x.get("volume") or 0) > 0]
-                                        if b_sh:
-                                            b_sh.sort(key=lambda x: int(x.get("price") or 0), reverse=True)
-                                            item["bestBuyPrice"] = int(b_sh[0].get("price") or 0)
-                                            item["bestBuyQuantity"] = int(b_sh[0].get("volume") or 0)
-                                            shield_tracker.trackers[isin_k]["market_maker_vol_logged"] = int(b_sh[0].get("marketMaker") or 0)
-                                        else:
-                                            item["bestBuyPrice"] = 0
-                                            item["bestBuyQuantity"] = 0
-                                        if s_sh:
-                                            s_sh.sort(key=lambda x: int(x.get("price") or 0))
-                                            item["bestSellPrice"] = int(s_sh[0].get("price") or 0)
-                                            item["bestSellQuantity"] = int(s_sh[0].get("volume") or 0)
-                                        else:
-                                            item["bestSellPrice"] = 0
-                                            item["bestSellQuantity"] = 0
-                                except Exception:
-                                    pass
-                                shield_tracker.update_deep_telemetry_if_due(session, headers, isin_k)
-                                shield_tracker.process_snapshot_and_evaluate(isin_k, item, now_ir)
+                        items_by_isin = {
+                            str(it["symbolIsin"]): it
+                            for it in items
+                            if isinstance(it, dict) and str(it.get("symbolIsin") or "") in shield_tracker.trackers
+                        }
+                        if items_by_isin:
+                            urgent_isins = shield_tracker.select_isins_for_live_sheet(items_by_isin, time.time())
+                            shield_tracker.overlay_live_sheets_parallel(headers, items_by_isin, urgent_isins)
+                            shield_tracker.update_deep_telemetry_batch_parallel(headers, urgent_isins)
+                            now_eval = get_tehran_now()
+                            for isin_k, item in items_by_isin.items():
+                                shield_tracker.process_snapshot_and_evaluate(isin_k, item, now_eval)
             except Exception:
                 pass
 
@@ -2604,7 +2689,9 @@ def main():
                     pass
                 last_gdrive_sync_ts = time.time()
 
-            time.sleep(PORTFOLIO_POLL_INTERVAL_SEC)
+            loop_elapsed = time.time() - loop_t0
+            sleep_rem = max(0.05, PORTFOLIO_POLL_INTERVAL_SEC - loop_elapsed)
+            time.sleep(sleep_rem)
 
     except KeyboardInterrupt:
         print("\n[!] اجرای نگهبان پرتفوی متوقف شد؛ ذخیره وضعیت نهایی و همگام‌سازی با گوگل درایو...")
