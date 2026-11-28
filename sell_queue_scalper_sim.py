@@ -139,7 +139,6 @@ SIM_STATE_JSON = os.path.join(DATA_DIR, "sell_queue_sim_state.json")
 # ۲.۵. ماژول همگام‌سازی خودکار، ضدبازنویسی و غیرمسدودکننده با گوگل درایو
 # ==============================================================================
 DEFAULT_GDRIVE_FOLDER_ID = "1RmnUrwKYhy2FYQUlcsaTX6nXhIgDzvXv"
-SARKHATI_SHARED_FOLDER_ID = "1n0cW933TdKQRczVB0wunYtMrDRLbKXQn"
 DEFAULT_GDRIVE_CLIENT_ID = ""
 DEFAULT_GDRIVE_CLIENT_SECRET = ""
 DEFAULT_GDRIVE_REFRESH_TOKEN = ""
@@ -711,6 +710,39 @@ def decode_jwt_payload_safe(token_str):
         return None
 
 
+def _normalize_digits_only(s):
+    if not s:
+        return ""
+    trans = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+    return re.sub(r"\D+", "", str(s).translate(trans))
+
+
+def check_token_matches_configured_user(payload, configured_username):
+    """تأیید قطعی اینکه توکن موجود متعلق به همان نام کاربری تنظیم‌شده است"""
+    if not isinstance(payload, dict):
+        return False
+    cfg_raw = str(configured_username or "").strip()
+    if not cfg_raw:
+        return True
+    cfg_digits = _normalize_digits_only(cfg_raw)
+    tok_phone = _normalize_digits_only(payload.get("phone_number") or "")
+    tok_nid = _normalize_digits_only(payload.get("national_id") or "")
+    tok_uname = str(payload.get("preferred_username") or payload.get("username") or "").strip().lower()
+    if tok_uname and tok_uname == cfg_raw.lower():
+        return True
+    if cfg_digits:
+        if tok_nid and cfg_digits == tok_nid:
+            return True
+        if tok_phone:
+            if cfg_digits == tok_phone:
+                return True
+            if len(cfg_digits) >= 10 and len(tok_phone) >= 10 and cfg_digits[-10:] == tok_phone[-10:]:
+                return True
+        if tok_phone or tok_nid:
+            return False
+    return True
+
+
 def check_token_remaining_minutes(token_str):
     payload = decode_jwt_payload_safe(token_str)
     if not payload or "exp" not in payload:
@@ -848,9 +880,12 @@ def ensure_valid_token():
         norm = cand if cand.lower().startswith("bearer ") else f"Bearer {cand}"
         ok, rem_m, payload = check_token_remaining_minutes(norm)
         if ok:
+            if not check_token_matches_configured_user(payload, MOFID_USERNAME):
+                print("[!] توکن موجود در پوشه scalper متعلق به حساب دیگری بود و نادیده گرفته شد.")
+                continue
             AUTH_TOKEN = norm
             name = (payload or {}).get("display_name") or "کاربر مفید"
-            return True, f"معتبر ({name} | اعتبار باقی‌مانده: {int(rem_m // 60)} ساعت و {int(rem_m % 60)} دقیقه)"
+            return True, f"معتبر و منطبق با حساب ({name} | اعتبار باقی‌مانده: {int(rem_m // 60)} ساعت و {int(rem_m % 60)} دقیقه)"
 
     print("[*] توکن فعلی منقضی است؛ در حال دریافت خودکار توکن ۱۲ ساعته جدید بدون مرورگر...")
     new_tok = fetch_mofid_token_headless()
