@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-نگهبان هوشمند پرتفوی مفید — سپر اول: محافظ سهامِ در صف خرید و عرضه‌های اولیه (نسخه ۲.۲ — کاملاً مستقل و موازی)
+نگهبان هوشمند پرتفوی مفید — سپر اول: محافظ سهامِ در صف خرید و عرضه‌های اولیه (نسخه ۲.۳ — آستانه شناور صف + تفکیک اوج پیوسته)
 ========================================================================================================================
 ویژگی‌های کلیدی نسخه ۲.۲:
 ۱) استقلال ۱۰۰٪ از پروژه سرخطی و شکارچی:
@@ -95,6 +95,9 @@ LAYER4_CANCEL_MIN_VELOCITY_PCT_PER_SEC = 3.5 # سرعت حذف سفارش >= ۳.
 # لایه ۵: حالت پشتیبان قطعی سهام دارای زنجیره صف خرید واقعی بدون ریزش (Hard Fallback / No-Queue Fail-Safe)
 LAYER5_STREAK_FAILSAFE_CONFIRM_SEC = 2.0     # اگر سهم دارای صف خرید واقعی روز قبل است و صف خرید ندارد، پس از ۲ ثانیه تأیید خروج می‌زند
 NON_STREAK_POST_BREAK_GRACE_SEC = 4.0        # برای سهم عادی که امروز صف خرید شده و صفش باز شده، ۴ ثانیه فرصت بازگشت
+NORMAL_STOCK_OPENING_COOLDOWN_END_STR = "09:02:00"  # ۲ دقیقه سکوت ابتدایی بازار برای سهام عادی (جلوگیری از فروش روی نوسان حراج بازگشایی)
+NORMAL_STOCK_QUEUE_CONFIRM_SEC = 10.0        # حداقل ۱۰ ثانیه پایداری مداوم صف خرید معتبر برای مسلح شدن سهم عادی (جلوگیری از شلیک روی صف‌های لحظه‌ای)
+BUY_QUEUE_DOMINANCE_RATIO = 3.0              # نسبت یکپارچه و پیوسته تسلط تقاضای سقف بر عرضه هم‌سطح (حذف پرش ناگهانی ۲x به ۱۰x در ۰۹:۰۳)
 
 # پارامترهای تشخیص قفل مجدد پس از فروش (Whipsaw / Re-Lock Detector)
 RELOCK_MIN_RATIO_OF_PREV_PEAK = 0.50         # اگر پس از فروش، دوباره صف خرید تشکیل شد و به ۵۰٪ اوج قبلی رسید
@@ -144,6 +147,8 @@ _GDRIVE_SYNC_PENDING = False
 _GDRIVE_SYNC_THREAD = None
 _STATE_SYNC_INITIALIZED = False
 _CACHED_LOGS_FOLDER_ID = None
+_SIGNAL_SEQ_COUNTER = 0
+_SIGNAL_SEQ_LOCK = threading.Lock()
 
 _THREAD_LOCAL_HTTP = threading.local()
 _SHARED_POLL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=PARALLEL_POLL_MAX_WORKERS)
@@ -657,7 +662,7 @@ class GuardianTeeLogger:
             self.log_file = open(log_path, "a", encoding="utf-8")
             now_ir = get_tehran_now().strftime("%Y-%m-%d %H:%M:%S")
             self.log_file.write(
-                f"\n{'='*84}\n=== شروع نشست نگهبان پرتفوی (سپر اول - نسخه ۲.۲ - حالت صوری) در تاریخ: {now_ir} (IRST) ===\n{'='*84}\n"
+                f"\n{'='*84}\n=== شروع نشست نگهبان پرتفوی (سپر اول - نسخه ۲.۳ - حالت صوری) در تاریخ: {now_ir} (IRST) ===\n{'='*84}\n"
             )
             self.log_file.flush()
         except Exception:
@@ -1124,11 +1129,76 @@ def fetch_symbol_multi_day_history(session, headers, isin):
     elif isin.upper().startswith("IRO5") and len(candles) == 0:
         recent_summary.append("سهم تازه عرضه اولیه شده (روز اول معاملاتی پس از عرضه اولیه)")
 
+    recent_vols = sorted(
+        int(c["v"]) for c in candles[-20:]
+        if c.get("has_ohlc", True) and int(c.get("v") or 0) > 0
+    )
+    if len(recent_vols) >= 5:
+        trim_v = recent_vols[1:-1]
+        avg_daily_vol_20d = int(round(sum(trim_v) / float(len(trim_v))))
+    elif recent_vols:
+        avg_daily_vol_20d = int(round(sum(recent_vols) / float(len(recent_vols))))
+    else:
+        avg_daily_vol_20d = 0
+
     return {
         "consecutive_buy_queue_days": consecutive_bq_days,
         "streak_cumulative_return_pct": round(streak_return_pct, 2),
         "recent_days_summary": " | ".join(recent_summary[:5]),
+        "avg_daily_vol_20d": avg_daily_vol_20d,
     }
+
+
+def compute_floating_min_buy_queue_threshold(isin, vol_30_avg, avg_daily_vol_20d, base_vol, max_valid_buy_vol, user_qty, high_allowed):
+    """
+    محاسبه کاملاً شناور و اختصاصی «حداقل حجم صف خرید واقعی و معتبر» متناسب با ویژگی‌های خاص هر سهم
+    (بدون استفاده از هیچ عدد ریالی ثابت و سفت‌وسخت):
+    - مبنای اول: درصد متناسب با نوع بازار از میانگین حجم روزانه سهم (۳۰ روزه یا میانگین تعدیل‌شده ۲۰ کندل اخیر)
+    - مبنای دوم: تلفیق متعادل با حجم مبنای رسمی شرکت (baseVolume) برای جلوگیری از خطا در نمادهای کم‌معامله
+    - مبنای سوم: حداقل ضریب نقدشوندگی خروج نسبت به حجم دارایی خود کاربر (۵ برابر دارایی)
+    """
+    prefix = str(isin or "").upper()[:4]
+    if prefix == "IRO1":
+        liq_ratio = 0.15
+    elif prefix == "IRO3":
+        liq_ratio = 0.15
+    elif prefix == "IRO7":
+        liq_ratio = 0.12
+    elif prefix == "IRO5":
+        liq_ratio = 0.10
+    elif prefix.startswith("IRT"):
+        liq_ratio = 0.12
+    else:
+        liq_ratio = 0.15
+
+    eff_avg_vol = int(vol_30_avg or 0) if int(vol_30_avg or 0) > 0 else int(avg_daily_vol_20d or 0)
+    b_vol = int(base_vol or 0)
+    max_ord_v = int(max_valid_buy_vol or 0)
+    u_qty = max(1, int(user_qty or 1))
+
+    basis_parts = []
+    if eff_avg_vol > 0 and b_vol > 0:
+        vol_comp = int(round(eff_avg_vol * liq_ratio))
+        base_comp = int(round(min(eff_avg_vol * 0.30, b_vol * 0.08)))
+        liq_floor = max(vol_comp, base_comp)
+        basis_parts.append(f"{int(liq_ratio*100)}% میانگین روزانه ({eff_avg_vol:,}) / تلفیق با حجم مبنا ({b_vol:,})")
+    elif eff_avg_vol > 0:
+        liq_floor = int(round(eff_avg_vol * liq_ratio))
+        basis_parts.append(f"{int(liq_ratio*100)}% میانگین حجم روزانه سهم ({eff_avg_vol:,})")
+    elif b_vol > 0:
+        liq_floor = int(round(b_vol * 0.10))
+        basis_parts.append(f"۱۰٪ حجم مبنای رسمی سهم ({b_vol:,})")
+    elif max_ord_v > 0:
+        liq_floor = int(round(max_ord_v * 1.5))
+        basis_parts.append(f"۱.۵ برابر سقف سفارش مجاز تابلو ({max_ord_v:,})")
+    else:
+        liq_floor = max(u_qty * 10, 1000)
+        basis_parts.append(f"پشتیبان نقدشوندگی ({u_qty:,}×۱۰ سهم)")
+
+    user_floor = max(u_qty * 5, 1)
+    min_q_vol = max(liq_floor, user_floor, 1)
+    est_val_tomans = int(round((min_q_vol * int(high_allowed or 0)) / 10.0)) if int(high_allowed or 0) > 0 else 0
+    return min_q_vol, est_val_tomans, " | ".join(basis_parts)
 
 
 def register_orbis_session_properly(session, headers):
@@ -1454,11 +1524,17 @@ def discover_and_classify_portfolio(session, headers):
             sell_comm = def_sc
 
         vol_30_avg = 0
+        base_vol = int(snap.get("baseVolume") or snap.get("baseVol") or 0)
+        max_valid_buy_vol = int(snap.get("maxValidBuyVolume") or 0)
         try:
             r_si = t_sess.post(SYMBOL_INFO_DATA_URL, data=json.dumps({"isin": isin}).encode("utf-8"), headers=headers, timeout=3.0)
             if r_si.status_code == 200 and r_si.text:
                 si = r_si.json() or {}
                 vol_30_avg = int(si.get("volume30AVG") or si.get("volume90Avg") or 0)
+                if not base_vol:
+                    base_vol = int(si.get("baseVolume") or si.get("baseVol") or 0)
+                if not max_valid_buy_vol:
+                    max_valid_buy_vol = int(si.get("maxValidBuyVolume") or 0)
                 if not high_allowed:
                     high_allowed = int(si.get("highAllowedPrice") or 0)
                 if not prev_close:
@@ -1469,6 +1545,16 @@ def discover_and_classify_portfolio(session, headers):
         hist = fetch_symbol_multi_day_history(t_sess, headers, isin)
         consec_bq_days = hist["consecutive_buy_queue_days"]
         streak_ret_pct = hist["streak_cumulative_return_pct"]
+        avg_daily_vol_20d = int(hist.get("avg_daily_vol_20d") or 0)
+        min_real_queue_vol, min_real_queue_val_tomans, min_real_queue_basis = compute_floating_min_buy_queue_threshold(
+            isin=isin,
+            vol_30_avg=vol_30_avg,
+            avg_daily_vol_20d=avg_daily_vol_20d,
+            base_vol=base_vol,
+            max_valid_buy_vol=max_valid_buy_vol,
+            user_qty=info["quantity"],
+            high_allowed=high_allowed,
+        )
 
         breakeven = float(info.get("breakeven_price_rials") or 0.0)
         ref_curr_price = float(last_p or prev_close or high_allowed or breakeven)
@@ -1516,6 +1602,12 @@ def discover_and_classify_portfolio(session, headers):
             "best_sell_quantity": best_sell_q,
             "sell_commission_rate": sell_comm,
             "volume_30_avg": vol_30_avg,
+            "avg_daily_vol_20d": avg_daily_vol_20d,
+            "base_vol": base_vol,
+            "max_valid_buy_vol": max_valid_buy_vol,
+            "min_real_queue_vol": min_real_queue_vol,
+            "min_real_queue_val_tomans": min_real_queue_val_tomans,
+            "min_real_queue_basis": min_real_queue_basis,
             "user_unrealized_profit_pct": round(user_profit_pct, 2),
             "consecutive_buy_queue_days": consec_bq_days,
             "streak_cumulative_return_pct": streak_ret_pct,
@@ -1572,6 +1664,7 @@ def print_startup_portfolio_report(portfolio_map):
             f"     - قیمت سر‌به‌سر (با کارمزد): {int(info['breakeven_price_rials']):,} ریال | آخرین قیمت: {info['last_traded_price_rials']:,} ریال | سقف مجاز امروز: {info['high_allowed_price_rials']:,} ریال\n"
             f"     - سود تحقق‌نیافته کاربر: {info['user_unrealized_profit_pct']:+.2f}% | روزهای متوالی صف خرید بدون ریزش: {info['consecutive_buy_queue_days']} روز (رشد سلسله صف: +{info['streak_cumulative_return_pct']:.2f}%)\n"
             f"     - کندل‌های روزهای اخیر: {info['recent_days_summary'] or 'نامشخص'}\n"
+            f"     - آستانه شناور صف خرید واقعی این سهم: {info.get('min_real_queue_vol', 0):,} سهم (~{info.get('min_real_queue_val_tomans', 0):,} تومان) [{info.get('min_real_queue_basis', 'شناور')}]\n"
             f"     - وضعیت فعلی تابلو: خرید {info['best_buy_quantity']:,} سهم @ {info['best_buy_price_rials']:,} ریال | فروش {info['best_sell_quantity']:,} سهم @ {info['best_sell_price_rials']:,} ریال\n"
             f"     - طبقه‌بندی نگهبان: {mode_badge}\n"
             f"     - توضیح: {info['sarkhati_detection_reason']}"
@@ -1613,7 +1706,12 @@ class BuyQueueShieldTracker:
                 "streak_ret_pct": float(info["streak_cumulative_return_pct"]),
                 "premarket_peak_queue_vol": 0,
                 "premarket_peak_time": "",
+                "min_real_queue_vol": int(info.get("min_real_queue_vol") or max(int(info["quantity"]) * 5, 1)),
+                "min_real_queue_val_tomans": int(info.get("min_real_queue_val_tomans") or 0),
+                "min_real_queue_basis": str(info.get("min_real_queue_basis") or "شناور"),
                 "seen_buy_queue_today": False,
+                "normal_queue_sustain_since_ts": None,
+                "continuous_session_initialized": False,
                 "peak_buy_queue_vol": 0,
                 "peak_buy_queue_time": "",
                 "traded_vol_at_peak": 0,
@@ -1877,26 +1975,23 @@ class BuyQueueShieldTracker:
 
         competing_sell_q = best_sell_q if (0 < best_sell_p <= high_p and best_sell_q > 0) else 0
         net_ceiling_buy_q = max(0, best_buy_q - competing_sell_q) if best_buy_p == high_p else 0
+        has_sub_ceiling_seller = (0 < best_sell_p < high_p and best_sell_q > 0)
 
-        if now_str < "09:03:00":
-            is_locked_buy_queue = (
-                best_buy_p == high_p
-                and net_ceiling_buy_q > max(tr["user_qty"] * 2, competing_sell_q * 2)
+        # تشخیص یکپارچه و بدون پرش آستانه برای قفل بودن صف خرید در سقف (فروشنده خارج از دامنه best_sell_p > high_p هرگز صف را باطل نمی‌کند)
+        is_locked_buy_queue = (
+            best_buy_p == high_p
+            and net_ceiling_buy_q > 0
+            and (not has_sub_ceiling_seller)
+            and (
+                competing_sell_q == 0
+                or best_buy_q > max(int(competing_sell_q * BUY_QUEUE_DOMINANCE_RATIO), tr["user_qty"] * 3)
             )
-        else:
-            is_locked_buy_queue = (
-                best_buy_p == high_p
-                and net_ceiling_buy_q > 0
-                and (
-                    best_sell_q == 0
-                    or (best_sell_p == high_p and best_buy_q > max(competing_sell_q * 10, tr["user_qty"] * 5))
-                )
-            )
+        )
 
         sample = {
             "ts": now_ts,
             "time_str": now_ms_str,
-            "buy_q": net_ceiling_buy_q if is_locked_buy_queue else (best_buy_q if best_buy_p == high_p else 0),
+            "buy_q": net_ceiling_buy_q if is_locked_buy_queue else 0,
             "raw_buy_q": best_buy_q,
             "buy_p": best_buy_p,
             "sell_q": best_sell_q,
@@ -1985,27 +2080,73 @@ class BuyQueueShieldTracker:
                             )
             return None
 
-        # بخش ب: پایش بازار پیوسته (09:00:00 تا 12:30:00) — ماتریس ۵ لایه‌ای
+        # بخش ب: پایش بازار پیوسته (09:00:00 تا 12:30:00) — ماتریس ۵ لایه‌ای با اوج مستقل پیوسته و آستانه شناور هر سهم
         if now_str < CONTINUOUS_START_TIME_STR or now_str > MARKET_CLOSE_TIME_STR:
             return None
 
-        eff_ceil_q = sample["buy_q"] if is_locked_buy_queue else 0
-        if is_locked_buy_queue:
-            tr["seen_buy_queue_today"] = True
-            # نکته مهم نسخه ۲.۲: سهم عادی که امروز صف خرید شد، برچسب is_prior_buy_queue_streak نمی‌گیرد
-            # تا مهلت بازگشت ۴ ثانیه‌ای سهام عادی (NON_STREAK_POST_BREAK_GRACE_SEC) به‌درستی حفظ شود!
+        # در آغاز بازار پیوسته، تایمرهای پیش‌گشایش و اوج پیش‌گشایش کاملاً از بازار پیوسته تفکیک می‌شوند
+        if not tr.get("continuous_session_initialized"):
+            tr["continuous_session_initialized"] = True
+            tr["peak_buy_queue_vol"] = 0
+            tr["peak_buy_queue_time"] = ""
+            tr["traded_vol_at_peak"] = traded_vol
             tr["queue_lost_since_ts"] = None
-            if eff_ceil_q > tr["peak_buy_queue_vol"]:
-                tr["peak_buy_queue_vol"] = eff_ceil_q
-                tr["peak_buy_queue_time"] = now_ms_str
-                tr["traded_vol_at_peak"] = traded_vol
-            elif tr["peak_buy_queue_vol"] > 0 and eff_ceil_q < tr["peak_buy_queue_vol"]:
-                tot_drop = tr["peak_buy_queue_vol"] - eff_ceil_q
-                tot_traded = max(0, traded_vol - tr["traded_vol_at_peak"])
-                if tot_drop > 0 and (tot_traded / float(tot_drop)) < 0.15 and eff_ceil_q >= int(tr["peak_buy_queue_vol"] * 0.55):
-                    tr["fake_cancel_ignored_count"] += 1
+            tr["normal_queue_sustain_since_ts"] = None
+            tr["seen_buy_queue_today"] = False
 
-        peak_q = max(tr["peak_buy_queue_vol"], tr["premarket_peak_queue_vol"])
+        # در ۶ ثانیه نخست حراج بازگشایی (09:00:00 تا 09:00:06) هیچ قضاوت و اوج‌گیری پیوسته‌ای انجام نمی‌شود
+        if now_str < CONTINUOUS_SAFE_GRACE_TIME_STR:
+            return None
+
+        # برای سهام عادی (بدون سابقه صف خرید روز قبل)، در ۲ دقیقه ابتدایی بازار (09:00 تا 09:02) پنجره سکوت کامل اعمال می‌شود
+        if (not tr["is_prior_buy_queue_streak"]) and now_str < NORMAL_STOCK_OPENING_COOLDOWN_END_STR:
+            tr["queue_lost_since_ts"] = None
+            tr["normal_queue_sustain_since_ts"] = None
+            return None
+
+        eff_ceil_q = net_ceiling_buy_q if is_locked_buy_queue else 0
+        min_real_q_vol = int(tr.get("min_real_queue_vol") or max(tr["user_qty"] * 5, 1))
+
+        if is_locked_buy_queue:
+            tr["queue_lost_since_ts"] = None
+            if tr["is_prior_buy_queue_streak"]:
+                # سهم دارای صف خرید واقعی از روزهای قبل: از همان 09:00:06 مسلح است
+                tr["seen_buy_queue_today"] = True
+            else:
+                # سهم عادی: فقط وقتی صف خریدش از آستانه شناور اختصاصی خود سهم بزرگ‌تر باشد و ۱۰ ثانیه پایدار بماند مسلح می‌شود
+                if not tr["seen_buy_queue_today"]:
+                    if eff_ceil_q >= min_real_q_vol:
+                        if tr["normal_queue_sustain_since_ts"] is None:
+                            tr["normal_queue_sustain_since_ts"] = now_ts
+                        elif (now_ts - tr["normal_queue_sustain_since_ts"]) >= NORMAL_STOCK_QUEUE_CONFIRM_SEC:
+                            tr["seen_buy_queue_today"] = True
+                            tr["peak_buy_queue_vol"] = eff_ceil_q
+                            tr["peak_buy_queue_time"] = now_ms_str
+                            tr["traded_vol_at_peak"] = traded_vol
+                            print(
+                                f"  [🛡️ مسلح شدن سهم عادی در صف خرید معتبر] {tr['name']} ({isin}) در ساعت {now_ms_str} | "
+                                f"صف فعلی: {eff_ceil_q:,} سهم >= آستانه شناور سهم ({min_real_q_vol:,} سهم) پس از {NORMAL_STOCK_QUEUE_CONFIRM_SEC:.0f}s پایداری"
+                            )
+                    else:
+                        tr["normal_queue_sustain_since_ts"] = None
+
+            # به‌روزرسانی اوج صف خرید پیوسته (کاملاً مستقل از اوج پیش‌گشایش)
+            if tr["seen_buy_queue_today"]:
+                if eff_ceil_q > tr["peak_buy_queue_vol"]:
+                    tr["peak_buy_queue_vol"] = eff_ceil_q
+                    tr["peak_buy_queue_time"] = now_ms_str
+                    tr["traded_vol_at_peak"] = traded_vol
+                elif tr["peak_buy_queue_vol"] > 0 and eff_ceil_q < tr["peak_buy_queue_vol"]:
+                    tot_drop = tr["peak_buy_queue_vol"] - eff_ceil_q
+                    tot_traded = max(0, traded_vol - tr["traded_vol_at_peak"])
+                    if tot_drop > 0 and (tot_traded / float(tot_drop)) < 0.15 and eff_ceil_q >= int(tr["peak_buy_queue_vol"] * 0.55):
+                        tr["fake_cancel_ignored_count"] += 1
+        else:
+            if not tr["seen_buy_queue_today"]:
+                tr["normal_queue_sustain_since_ts"] = None
+
+        # مبنای اوج در بازار پیوسته منحصراً اوج بازار پیوسته است (تفکیک کامل از حذف‌های پیش‌گشایش ۰۸:۴۵-۰۹:۰۰)
+        peak_q = tr["peak_buy_queue_vol"]
         curr_ceil_q = eff_ceil_q
 
         s_5s = self._get_sample_ago(hist, now_ts, 5.0)
@@ -2043,7 +2184,7 @@ class BuyQueueShieldTracker:
         slope_3s_negative = (s_3s is None) or (curr_ceil_q <= s_3s["buy_q"])
 
         # بررسی لایه‌های ۲، ۳ و ۴ زمانی که سهم هنوز در صف خرید سقف قرار دارد
-        if is_locked_buy_queue and peak_q > 0:
+        if is_locked_buy_queue and tr["seen_buy_queue_today"] and peak_q > 0:
             near_user_liquidity_danger = curr_ceil_q <= max(
                 int(tr["user_qty"] * LAYER2_USER_QTY_SAFETY_MULTIPLE),
                 int(peak_q * (1.0 - LAYER2_EROSION_DROP_FROM_PEAK_PCT / 100.0)),
@@ -2123,7 +2264,14 @@ class BuyQueueShieldTracker:
                 )
 
         # بررسی لایه ۵ (صرفاً برای سهام دارای صف خرید بدون ریزش روزهای قبل) و خروج تاییدی سهام عادیِ صف‌شده در امروز
-        if not is_locked_buy_queue and now_str >= CONTINUOUS_SAFE_GRACE_TIME_STR:
+        # محافظ قطعی ضدگلیچ: صرفاً وقتی در همین لحظه واقعاً صف خرید روی سقف وجود ندارد (یا عرضه هم‌سطح بر تقاضا غلبه کرده)
+        queue_truly_absent_now = (
+            (best_buy_p < high_p)
+            or (net_ceiling_buy_q == 0)
+            or has_sub_ceiling_seller
+            or (competing_sell_q > 0 and best_buy_q <= int(competing_sell_q * BUY_QUEUE_DOMINANCE_RATIO))
+        )
+        if (not is_locked_buy_queue) and queue_truly_absent_now and now_str >= CONTINUOUS_SAFE_GRACE_TIME_STR:
             if tr["queue_lost_since_ts"] is None:
                 tr["queue_lost_since_ts"] = now_ts
             lost_elapsed = now_ts - tr["queue_lost_since_ts"]
@@ -2202,8 +2350,13 @@ class BuyQueueShieldTracker:
         """ثبت ۱۰۰٪ صوری سیگنال فروش (بدون ارسال هیچ سفارش واقعی به کارگزاری)"""
         now_ir = get_tehran_now()
         today_str = now_ir.strftime("%Y-%m-%d")
-        sig_id = f"SHIELD1-{now_ir.strftime('%Y%m%d-%H%M%S')}-{isin[-4:]}"
-        peak_q = max(tr["peak_buy_queue_vol"], tr["premarket_peak_queue_vol"])
+        global _SIGNAL_SEQ_COUNTER
+        with _SIGNAL_SEQ_LOCK:
+            _SIGNAL_SEQ_COUNTER += 1
+            seq_no = _SIGNAL_SEQ_COUNTER
+        sym_tag = isin[4:8] if len(isin) >= 8 else isin[-4:]
+        sig_id = f"SHIELD1-{now_ir.strftime('%Y%m%d-%H%M%S')}-{sym_tag}-{seq_no:02d}"
+        peak_q = tr["premarket_peak_queue_vol"] if signal_phase == "PRE_MARKET_0845_0900" else tr["peak_buy_queue_vol"]
 
         gross_rials = int(round(order_price * tr["user_qty"]))
         sell_comm_rials = int(round(gross_rials * tr["sell_comm_rate"]))
@@ -2507,8 +2660,12 @@ def print_periodic_and_final_summary(shield_tracker, sim_state, title_prefix="گ
         hist = tr["history_samples"]
         last_s = hist[-1] if hist else {}
         curr_q = int(last_s.get("buy_q") or 0)
-        peak_q = max(tr["peak_buy_queue_vol"], tr["premarket_peak_queue_vol"])
-        drop_pct = (((peak_q - curr_q) / float(peak_q)) * 100.0) if peak_q > 0 else 0.0
+        now_hms_sum = get_tehran_now().strftime("%H:%M:%S")
+        if now_hms_sum >= CONTINUOUS_START_TIME_STR:
+            peak_q = max(tr["peak_buy_queue_vol"], curr_q) if tr.get("seen_buy_queue_today") else tr["peak_buy_queue_vol"]
+        else:
+            peak_q = max(tr["premarket_peak_queue_vol"], curr_q)
+        drop_pct = max(0.0, ((peak_q - curr_q) / float(peak_q)) * 100.0) if peak_q > 0 else 0.0
 
         if isin in exited_map:
             sig = exited_map[isin]
@@ -2563,7 +2720,7 @@ def main():
             return
 
         print(
-            f"[+] سپر اول نگهبان پرتفوی (نسخه ۲.۲ — کاملاً مستقل از سرخطی + ملاک صف خرید بدون ریزش + پایش موازی ۲۰+ نماد | "
+            f"[+] سپر اول نگهبان پرتفوی (نسخه ۲.۳ — آستانه شناور صف خرید + تفکیک اوج پیوسته از پیش‌گشایش + محافظ ضدگلیچ صف | "
             f"لاگ روزانه: {GDRIVE_LOGS_SUBFOLDER_NAME}/{GUARDIAN_LOG_FILENAME} | حالت ۱۰۰٪ صوری)"
         )
         tok_ok, tok_msg = ensure_valid_token()
