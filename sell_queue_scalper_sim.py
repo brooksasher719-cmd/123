@@ -24,8 +24,8 @@ from requests.adapters import HTTPAdapter
 SIMULATION_MODE = True
 
 # مشخصات کارگزاری مفید برای خواندن یا تمدید خودکار توکن (مشترک با فایل token.txt)
-MOFID_USERNAME = os.environ.get("MOFID_USERNAME", "").strip() or "09138156671"
-MOFID_PASSWORD = os.environ.get("MOFID_PASSWORD", "").strip() or "Asasmofid88"
+MOFID_USERNAME = os.environ.get("MOFID_USERNAME", "").strip() or ""
+MOFID_PASSWORD = os.environ.get("MOFID_PASSWORD", "").strip() or ""
 MIN_TOKEN_VALIDITY_MINUTES = 45
 AUTH_TOKEN = ""
 
